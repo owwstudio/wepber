@@ -4,7 +4,7 @@
         "headings": true,
         "images": true,
         "links": true,
-        "visual": true,
+        "visual": false,
         "performance": true,
         "security": false,
         "accessibility": false,

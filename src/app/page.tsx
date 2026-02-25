@@ -284,15 +284,15 @@ export default function HomePage() {
 
               {/* Category Scores Grid */}
               <div className="scores-grid">
-                <MiniScore score={result.seo.score} label="SEO" icon={FileText} onClick={() => scrollToSection("seo")} />
-                <MiniScore score={result.headings.score} label="Headings" icon={Heading} onClick={() => scrollToSection("headings")} />
-                <MiniScore score={result.images.score} label="Images" icon={ImageIcon} onClick={() => scrollToSection("images")} />
-                <MiniScore score={result.links.score} label="Links" icon={Link2} onClick={() => scrollToSection("links")} />
-                <MiniScore score={result.visual.score} label="Visual" icon={Palette} onClick={() => scrollToSection("visual")} />
-                <MiniScore score={result.performance.score} label="Performance" icon={Zap} onClick={() => scrollToSection("performance")} />
-                <MiniScore score={result.accessibility.score} label="Accessibility" icon={Accessibility} onClick={() => scrollToSection("accessibility")} />
-                <MiniScore score={result.responsive.score} label="Responsive" icon={Smartphone} onClick={() => scrollToSection("responsive")} />
-                <MiniScore score={result.security.score} label="Security" icon={ShieldCheck} onClick={() => scrollToSection("security")} />
+                {result.seo && <MiniScore score={result.seo.score} label="SEO" icon={FileText} onClick={() => scrollToSection("seo")} />}
+                {result.headings && <MiniScore score={result.headings.score} label="Headings" icon={Heading} onClick={() => scrollToSection("headings")} />}
+                {result.images && <MiniScore score={result.images.score} label="Images" icon={ImageIcon} onClick={() => scrollToSection("images")} />}
+                {result.links && <MiniScore score={result.links.score} label="Links" icon={Link2} onClick={() => scrollToSection("links")} />}
+                {result.visual && <MiniScore score={result.visual.score} label="Visual" icon={Palette} onClick={() => scrollToSection("visual")} />}
+                {result.performance && <MiniScore score={result.performance.score} label="Performance" icon={Zap} onClick={() => scrollToSection("performance")} />}
+                {result.accessibility && <MiniScore score={result.accessibility.score} label="Accessibility" icon={Accessibility} onClick={() => scrollToSection("accessibility")} />}
+                {result.responsive && <MiniScore score={result.responsive.score} label="Responsive" icon={Smartphone} onClick={() => scrollToSection("responsive")} />}
+                {result.security && <MiniScore score={result.security.score} label="Security" icon={ShieldCheck} onClick={() => scrollToSection("security")} />}
               </div>
 
               {/* Tech Stack */}
@@ -337,45 +337,65 @@ export default function HomePage() {
 
               {/* Detailed Sections */}
               <div className="sections-grid">
-                <CollapsibleSection ref={(el) => { sectionRefs.current.seo = el; }} title="SEO Meta Tags" icon={FileText} score={result.seo.score} open={openSections.seo} onOpenChange={(v) => handleSectionOpenChange("seo", v)}>
-                  <SEOSection data={result.seo} />
-                </CollapsibleSection>
+                {result.seo && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.seo = el; }} title="SEO Meta Tags" icon={FileText} score={result.seo.score} open={openSections.seo} onOpenChange={(v) => handleSectionOpenChange("seo", v)}>
+                    <SEOSection data={result.seo} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.headings = el; }} title="Heading Structure" icon={Heading} score={result.headings.score} open={openSections.headings} onOpenChange={(v) => handleSectionOpenChange("headings", v)}>
-                  <HeadingsSection data={result.headings} />
-                </CollapsibleSection>
+                {result.headings && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.headings = el; }} title="Heading Structure" icon={Heading} score={result.headings.score} open={openSections.headings} onOpenChange={(v) => handleSectionOpenChange("headings", v)}>
+                    <HeadingsSection data={result.headings} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.images = el; }} title="Image Audit" icon={ImageIcon} score={result.images.score} open={openSections.images} onOpenChange={(v) => handleSectionOpenChange("images", v)}>
-                  <ImagesSection data={result.images} />
-                </CollapsibleSection>
+                {result.images && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.images = el; }} title="Image Audit" icon={ImageIcon} score={result.images.score} open={openSections.images} onOpenChange={(v) => handleSectionOpenChange("images", v)}>
+                    <ImagesSection data={result.images} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.links = el; }} title="Links &amp; Buttons" icon={Link2} score={result.links.score} open={openSections.links} onOpenChange={(v) => handleSectionOpenChange("links", v)}>
-                  <LinksSection data={result.links} />
-                </CollapsibleSection>
+                {result.links && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.links = el; }} title="Links &amp; Buttons" icon={Link2} score={result.links.score} open={openSections.links} onOpenChange={(v) => handleSectionOpenChange("links", v)}>
+                    <LinksSection data={result.links} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.visual = el; }} title="Visual Consistency" icon={Palette} score={result.visual.score} open={openSections.visual} onOpenChange={(v) => handleSectionOpenChange("visual", v)}>
-                  <VisualSection data={result.visual} />
-                </CollapsibleSection>
+                {result.visual && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.visual = el; }} title="Visual Consistency" icon={Palette} score={result.visual.score} open={openSections.visual} onOpenChange={(v) => handleSectionOpenChange("visual", v)}>
+                    <VisualSection data={result.visual} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.performance = el; }} title="Performance" icon={Zap} score={result.performance.score} open={openSections.performance} onOpenChange={(v) => handleSectionOpenChange("performance", v)}>
-                  <PerformanceSection data={result.performance} />
-                </CollapsibleSection>
+                {result.performance && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.performance = el; }} title="Performance" icon={Zap} score={result.performance.score} open={openSections.performance} onOpenChange={(v) => handleSectionOpenChange("performance", v)}>
+                    <PerformanceSection data={result.performance} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.accessibility = el; }} title="Accessibility" icon={Accessibility} score={result.accessibility.score} open={openSections.accessibility} onOpenChange={(v) => handleSectionOpenChange("accessibility", v)}>
-                  <AccessibilitySection data={result.accessibility} />
-                </CollapsibleSection>
+                {result.accessibility && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.accessibility = el; }} title="Accessibility" icon={Accessibility} score={result.accessibility.score} open={openSections.accessibility} onOpenChange={(v) => handleSectionOpenChange("accessibility", v)}>
+                    <AccessibilitySection data={result.accessibility} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.responsive = el; }} title="Responsive Test" icon={Smartphone} score={result.responsive.score} open={openSections.responsive} onOpenChange={(v) => handleSectionOpenChange("responsive", v)}>
-                  <ResponsiveSection data={result.responsive} />
-                </CollapsibleSection>
+                {result.responsive && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.responsive = el; }} title="Responsive Test" icon={Smartphone} score={result.responsive.score} open={openSections.responsive} onOpenChange={(v) => handleSectionOpenChange("responsive", v)}>
+                    <ResponsiveSection data={result.responsive} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.security = el; }} title="Security Standards" icon={ShieldCheck} score={result.security.score} open={openSections.security} onOpenChange={(v) => handleSectionOpenChange("security", v)}>
-                  <SecuritySection data={result.security} />
-                </CollapsibleSection>
+                {result.security && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.security = el; }} title="Security Standards" icon={ShieldCheck} score={result.security.score} open={openSections.security} onOpenChange={(v) => handleSectionOpenChange("security", v)}>
+                    <SecuritySection data={result.security} />
+                  </CollapsibleSection>
+                )}
 
-                <CollapsibleSection ref={(el) => { sectionRefs.current.sitemap = el; }} title={`Sitemap (${result.sitemap?.urls?.length || 0} URLs)`} icon={Map} score={-1} open={openSections.sitemap} onOpenChange={(v) => handleSectionOpenChange("sitemap", v)}>
-                  <SitemapSection data={result.sitemap} onScanUrl={(u: string) => handleScan(u)} />
-                </CollapsibleSection>
+                {result.sitemap && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.sitemap = el; }} title={`Sitemap (${result.sitemap?.urls?.length || 0} URLs)`} icon={Map} score={-1} open={openSections.sitemap} onOpenChange={(v) => handleSectionOpenChange("sitemap", v)}>
+                    <SitemapSection data={result.sitemap} onScanUrl={(u: string) => handleScan(u)} />
+                  </CollapsibleSection>
+                )}
               </div>
 
               {/* Footer */}

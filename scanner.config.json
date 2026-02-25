@@ -1,0 +1,14 @@
+{
+    "features": {
+        "seo": true,
+        "headings": true,
+        "images": true,
+        "links": true,
+        "visual": true,
+        "performance": true,
+        "security": false,
+        "accessibility": false,
+        "techStack": false,
+        "sitemap": false
+    }
+}

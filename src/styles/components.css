@@ -1,0 +1,188 @@
+/* src/styles/components.css - UI Components BEM Styles */
+
+/* Collapsible Section */
+.collapsible-section {
+    padding: 0 !important;
+    overflow: hidden;
+}
+
+.collapsible-section__header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 22px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+}
+
+.collapsible-section__title {
+    flex: 1;
+}
+
+.collapsible-section__content-wrapper {
+    overflow: hidden;
+}
+
+.collapsible-section__content {
+    padding: 0 22px 22px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 18px;
+}
+
+/* Screenshot Gallery */
+.screenshot-gallery {
+    margin-top: 16px;
+}
+
+.screenshot-gallery__header {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.screenshot-gallery__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.screenshot-card {
+    padding: 0 !important;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.screenshot-card__image-wrapper {
+    position: relative;
+}
+
+.screenshot-card__image {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    object-position: top;
+    display: block;
+}
+
+.screenshot-card__overlay {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #fff;
+}
+
+.screenshot-card__footer {
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lightbox-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    cursor: zoom-out;
+}
+
+.lightbox-modal__close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    color: #fff;
+}
+
+.lightbox-modal__image {
+    max-width: 95%;
+    max-height: 90vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* Badge modifier */
+.badge--xs {
+    font-size: 10px;
+}
+
+/* Accessibility Accordion */
+.a11y-accordion__item--open {
+    border-color: color-mix(in srgb, var(--cat-color) 25%, transparent) !important;
+    background: color-mix(in srgb, var(--cat-color) 5%, transparent) !important;
+}
+
+.a11y-item__icon {
+    color: var(--cat-color);
+    flex-shrink: 0;
+}
+
+.a11y-item__row--nested {
+    padding: 0;
+    gap: 8px;
+    width: 100%;
+}
+
+.a11y-accordion__trigger-icon {
+    color: var(--cat-color);
+    flex-shrink: 0;
+}
+
+.a11y-accordion__trigger-icon--ok {
+    color: var(--success);
+    flex-shrink: 0;
+}
+
+.mini-score--clickable {
+    cursor: pointer;
+}
+
+/* MiniScore */
+.mini-score {
+    padding: 14px 32px !important;
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+}
+
+.mini-score__body {
+    flex: 1;
+}
+
+.mini-score__label {
+    font-size: 12px;
+    color: grey;
+    margin-bottom: -2px;
+}
+
+.mini-score__value {
+    font-size: 20px;
+    font-weight: 700;
+}

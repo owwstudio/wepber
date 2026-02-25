@@ -1,0 +1,67 @@
+/* src/styles/components.css - Append */
+
+/* SEO Section */
+.seo-section__grid {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.seo-section__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+}
+
+.seo-section__label {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.seo-section__value {
+    font-size: 13px;
+    max-width: 60%;
+    text-align: right;
+    word-break: break-word;
+}
+
+.seo-section__og-tags {
+    margin-bottom: 16px;
+}
+
+.seo-section__og-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+}
+
+.seo-section__og-item {
+    font-size: 12px;
+    padding: 4px 0;
+    color: var(--text-secondary);
+}
+
+.seo-section__og-key {
+    color: var(--accent-primary);
+}
+
+/* Headings Section */
+.headings-section__badges {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.headings-section__tree {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 8px;
+}

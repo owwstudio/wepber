@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium";
+import chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
 
 // ===== RATE LIMITER (in-memory, per IP) =====
@@ -279,11 +279,13 @@ export async function POST(request: NextRequest) {
         }
 
         // ===== PUPPETEER LAUNCH (hardened) =====
-        // On Vercel: use @sparticuz/chromium Lambda binary
+        // On Vercel: use @sparticuz/chromium-min + remote pack to bypass 50MB limit
         // On local: use system Chrome installation
         const isVercel = !!process.env.VERCEL;
         const executablePath = isVercel
-            ? await chromium.executablePath()
+            ? await chromium.executablePath(
+                "https://github.com/Sparticuz/chromium/releases/download/v133.0.0/chromium-v133.0.0-pack.tar"
+            )
             : process.platform === "win32"
                 ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
                 : process.platform === "linux"

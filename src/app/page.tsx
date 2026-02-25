@@ -145,10 +145,9 @@ export default function HomePage() {
           animate={{ opacity: 1, y: 0 }}
         >
           <div className="page__badge">
-            Made with ❤️ by One Week Wonders
+            made with ❤️ by<a href="https://oneweekwonders.com" target="_blank">One Week Wonders</a>
           </div>
-          <h1 className="page__headline">Wepber
-            <br /> <span className="page__lowheadline">Catch the glitch, weave the fix!</span></h1>
+          <h1 className="page__headline">COAXA</h1>
           <p className="page__subheadline">
             a web analyzer tool to analyze any website for SEO compliance, broken elements, visual consistency, and overall quality.
           </p>
@@ -180,7 +179,7 @@ export default function HomePage() {
                 <RotateCw size={18} style={{ animation: "spin 1s linear infinite" }} />
               ) : (
                 <span className="search-form__btn-content">
-                  <Bug size={18} /> Catch!
+                  <Search size={18} /> Scan
                 </span>
               )}
             </button>

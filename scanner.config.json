@@ -4,11 +4,11 @@
         "headings": true,
         "images": true,
         "links": true,
-        "visual": true,
+        "visual": false,
         "performance": true,
-        "security": true,
-        "accessibility": true,
-        "techStack": true,
-        "sitemap": true
+        "security": false,
+        "accessibility": false,
+        "techStack": false,
+        "sitemap": false
     }
 }

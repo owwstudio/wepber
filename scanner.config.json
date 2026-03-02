@@ -7,8 +7,12 @@
         "visual": false,
         "performance": true,
         "security": false,
-        "accessibility": false,
+        "accessibility": true,
+        "responsive": true,
         "techStack": false,
-        "sitemap": false
+        "sitemap": true,
+        "coreWebVitals": true,
+        "structuredData": false,
+        "robots": false
     }
 }

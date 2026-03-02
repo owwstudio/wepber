@@ -42,6 +42,9 @@ import ResponsiveSection from "@/components/sections/ResponsiveSection";
 import AccessibilitySection from "@/components/sections/AccessibilitySection";
 import SecuritySection from "@/components/sections/SecuritySection";
 import TechStackSection from "@/components/sections/TechStackSection";
+import CoreWebVitalsSection from "@/components/sections/CoreWebVitalsSection";
+import StructuredDataSection from "@/components/sections/StructuredDataSection";
+import RobotsSection from "@/components/sections/RobotsSection";
 
 const scanMessages = [
   "Launching browser engine...",
@@ -51,12 +54,15 @@ const scanMessages = [
   "Auditing images...",
   "Checking links & buttons...",
   "Analyzing visual consistency...",
-  "Measuring performance...",
+  "Measuring performance metrics...",
+  "Collecting Core Web Vitals...",
   "Running accessibility checks...",
+  "Checking structured data...",
+  "Parsing robots.txt...",
   "Generating report...",
 ];
 
-const SECTION_KEYS = ["seo", "headings", "images", "links", "visual", "performance", "accessibility", "responsive", "security", "sitemap"] as const;
+const SECTION_KEYS = ["seo", "headings", "images", "links", "visual", "performance", "accessibility", "responsive", "security", "coreWebVitals", "structuredData", "robots", "sitemap"] as const;
 type SectionKey = (typeof SECTION_KEYS)[number];
 
 export default function HomePage() {
@@ -197,9 +203,9 @@ export default function HomePage() {
             >
               <div className="loading-state__spinner-wrap">
                 {/* Elapsed timer */}
-                <div className="loading-state__timer">
+                {/* <div className="loading-state__timer">
                   {Math.floor(elapsed / 60).toString().padStart(2, "0")}:{(elapsed % 60).toString().padStart(2, "0")}
-                </div>
+                </div> */}
                 {/* Progress bar (fills up to 120s limit) */}
                 <div className="loading-state__progress-track">
                   <div
@@ -292,6 +298,8 @@ export default function HomePage() {
                 {result.accessibility && <MiniScore score={result.accessibility.score} label="Accessibility" icon={Accessibility} onClick={() => scrollToSection("accessibility")} />}
                 {result.responsive && <MiniScore score={result.responsive.score} label="Responsive" icon={Smartphone} onClick={() => scrollToSection("responsive")} />}
                 {result.security && <MiniScore score={result.security.score} label="Security" icon={ShieldCheck} onClick={() => scrollToSection("security")} />}
+                {result.coreWebVitals && <MiniScore score={result.coreWebVitals.score} label="Core Web Vitals" icon={Zap} onClick={() => scrollToSection("coreWebVitals")} />}
+                {result.structuredData && <MiniScore score={result.structuredData.score} label="Structured Data" icon={Network} onClick={() => scrollToSection("structuredData")} />}
               </div>
 
               {/* Tech Stack */}
@@ -387,6 +395,24 @@ export default function HomePage() {
                 {result.security && (
                   <CollapsibleSection ref={(el) => { sectionRefs.current.security = el; }} title="Security Standards" icon={ShieldCheck} score={result.security.score} open={openSections.security} onOpenChange={(v) => handleSectionOpenChange("security", v)}>
                     <SecuritySection data={result.security} />
+                  </CollapsibleSection>
+                )}
+
+                {result.coreWebVitals && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.coreWebVitals = el; }} title="Core Web Vitals" icon={Zap} score={result.coreWebVitals.score} open={openSections.coreWebVitals} onOpenChange={(v) => handleSectionOpenChange("coreWebVitals", v)}>
+                    <CoreWebVitalsSection data={result.coreWebVitals} />
+                  </CollapsibleSection>
+                )}
+
+                {result.structuredData && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.structuredData = el; }} title="Structured Data" icon={Network} score={result.structuredData.score} open={openSections.structuredData} onOpenChange={(v) => handleSectionOpenChange("structuredData", v)}>
+                    <StructuredDataSection data={result.structuredData} />
+                  </CollapsibleSection>
+                )}
+
+                {result.robots && (
+                  <CollapsibleSection ref={(el) => { sectionRefs.current.robots = el; }} title="Robots.txt" icon={Bug} score={-1} open={openSections.robots} onOpenChange={(v) => handleSectionOpenChange("robots", v)}>
+                    <RobotsSection data={result.robots} />
                   </CollapsibleSection>
                 )}
 

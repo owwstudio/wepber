@@ -4,6 +4,9 @@ import puppeteer from "puppeteer-core";
 import fs from "fs";
 import path from "path";
 
+// Force Next.js never to cache this API route
+export const dynamic = "force-dynamic";
+
 // ===== RATE LIMITER (in-memory, per IP) =====
 const RATE_LIMIT_MAX = 50;   // max requests
 const RATE_LIMIT_WINDOW = 60_000; // per 60 seconds
@@ -75,6 +78,9 @@ interface ScanResult {
     responsive?: ResponsiveResult;
     security?: SecurityResult;
     techStack?: TechStackResult;
+    coreWebVitals?: CoreWebVitalsResult;
+    structuredData?: StructuredDataResult;
+    robots?: RobotsResult;
     sitemap?: { urls: { loc: string; lastmod?: string; changefreq?: string; priority?: string }[]; source: string | null; error?: string };
 }
 
@@ -232,6 +238,32 @@ interface TechStackResult {
     totalDetected: number;
 }
 
+interface CoreWebVitalsResult {
+    score: number;
+    lcp: { value: number | null; rating: string };
+    cls: { value: number | null; rating: string };
+    tbt: { value: number | null; rating: string };
+    issues: string[];
+}
+
+interface StructuredDataResult {
+    score: number;
+    schemas: { type: string; valid: boolean; issues: string[]; raw: string }[];
+    totalFound: number;
+    issues: string[];
+}
+
+interface RobotsResult {
+    exists: boolean;
+    content: string | null;
+    isBlockingPage: boolean;
+    blockedByRule: string | null;
+    hasSitemapDirective: boolean;
+    sitemapUrl: string | null;
+    googleBotAllowed: boolean;
+    issues: string[];
+}
+
 export async function POST(request: NextRequest) {
 
     let scannerConfig = { features: { seo: true, headings: true, images: true, links: true, visual: true, performance: true, accessibility: true, responsive: true, security: true, techStack: true, sitemap: true } };
@@ -334,6 +366,17 @@ export async function POST(request: NextRequest) {
         const page = await browser.newPage();
         await page.setViewport({ width: 1440, height: 900 });
 
+        // Disable HTTP cache so every scan fetches fresh resources from the target server.
+        // This is critical: without this, rescanning a fixed website may still show
+        // old (broken/cached) resources if the target server sends long-lived cache headers.
+        await page.setCacheEnabled(false);
+
+        // Tell the target server explicitly not to use stale cached content
+        await page.setExtraHTTPHeaders({
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        });
+
         // Global page timeout — all evaluate/click/etc calls default to 25s
         page.setDefaultTimeout(25000);
         page.setDefaultNavigationTimeout(25000);
@@ -341,21 +384,28 @@ export async function POST(request: NextRequest) {
         // Performance tracking
         const startTime = Date.now();
 
-        // Collect resource data
+        // Collect resource data — use actual body size when Content-Length is missing (chunked encoding)
         const resources: { type: string; size: number; url: string }[] = [];
         page.on("response", async (response) => {
             try {
                 const resUrl = response.url();
                 const headers = response.headers();
                 const contentType = headers["content-type"] || "";
-                const contentLength = parseInt(headers["content-length"] || "0", 10);
+                let size = parseInt(headers["content-length"] || "0", 10);
+                // Fallback: read actual body bytes when Content-Length is absent (chunked transfer)
+                if (size === 0) {
+                    try {
+                        const buf = await response.buffer();
+                        size = buf.length;
+                    } catch { /* ignore — response may not be readable */ }
+                }
                 let type = "other";
                 if (contentType.includes("javascript")) type = "js";
                 else if (contentType.includes("css")) type = "css";
                 else if (contentType.includes("image")) type = "image";
                 else if (contentType.includes("font")) type = "font";
                 else if (contentType.includes("html")) type = "html";
-                resources.push({ type, size: contentLength, url: resUrl });
+                resources.push({ type, size, url: resUrl });
             } catch { /* ignore */ }
         });
 
@@ -401,9 +451,12 @@ export async function POST(request: NextRequest) {
         let visualScore = 0; let visualResult: VisualResult | undefined;
         let perfScore = 0; let performanceResult: PerformanceResult | undefined;
         let a11yScore = 0; let accessibilityResult: AccessibilityResult | undefined;
-        let responsiveScore = 0; let responsiveResult: ResponsiveResult | undefined;
+        let responsiveScore = 100; let responsiveResult: ResponsiveResult | undefined;
         let securityScore = 0; let securityResult: SecurityResult | undefined;
         let techStackResult: TechStackResult | undefined;
+        let cwvScore = 0; let coreWebVitalsResult: CoreWebVitalsResult | undefined;
+        let sdScore = 0; let structuredDataResult: StructuredDataResult | undefined;
+        let robotsResult: RobotsResult | undefined;
         let sitemapResult: { urls: { loc: string; lastmod?: string; changefreq?: string; priority?: string }[]; source: string | null; error?: string } | undefined;
 
 
@@ -573,6 +626,43 @@ export async function POST(request: NextRequest) {
         // ===== IMAGE AUDIT =====
         if (scannerConfig.features.images) {
 
+            // Scroll through the page to trigger lazy-loaded images to load
+            await page.evaluate(async () => {
+                await new Promise<void>((resolve) => {
+                    const scrollStep = window.innerHeight;
+                    const scrollDelay = 120;
+                    let scrolled = 0;
+                    const totalHeight = document.body.scrollHeight;
+                    const timer = setInterval(() => {
+                        window.scrollBy(0, scrollStep);
+                        scrolled += scrollStep;
+                        if (scrolled >= totalHeight) {
+                            clearInterval(timer);
+                            window.scrollTo(0, 0);
+                            resolve();
+                        }
+                    }, scrollDelay);
+                });
+            });
+
+            // Wait for images that just became visible to finish loading
+            await page.evaluate(async () => {
+                const imgs = Array.from(document.querySelectorAll<HTMLImageElement>("img"));
+                await Promise.all(
+                    imgs.map(
+                        (img) =>
+                            img.complete
+                                ? Promise.resolve()
+                                : new Promise<void>((res) => {
+                                    img.onload = () => res();
+                                    img.onerror = () => res();
+                                    // Safety timeout per image
+                                    setTimeout(res, 5000);
+                                })
+                    )
+                );
+            });
+
             const imageData = await page.evaluate(() => {
                 const imgs = Array.from(document.querySelectorAll("img"));
                 return imgs.map((img) => ({
@@ -581,6 +671,9 @@ export async function POST(request: NextRequest) {
                     hasAlt: img.hasAttribute("alt"),
                     naturalWidth: img.naturalWidth,
                     naturalHeight: img.naturalHeight,
+                    // complete=true + naturalWidth=0 means browser tried to load but failed (truly broken)
+                    // complete=false means still loading (not necessarily broken)
+                    complete: img.complete,
                     width: img.width,
                     height: img.height,
                     loading: img.loading,
@@ -589,7 +682,9 @@ export async function POST(request: NextRequest) {
 
             const imageIssues: string[] = [];
             const withoutAlt = imageData.filter((i) => !i.hasAlt).length;
-            const broken = imageData.filter((i) => i.naturalWidth === 0 && i.src).length;
+            // An image is truly broken only if the browser completed loading it (complete=true)
+            // but got zero natural pixels. lazy images not yet in viewport have complete=false.
+            const broken = imageData.filter((i) => i.complete && i.naturalWidth === 0 && i.src).length;
             const lazyLoaded = imageData.filter((i) => i.loading === "lazy").length;
 
             if (withoutAlt > 0) imageIssues.push(`${withoutAlt} image(s) missing alt attribute`);
@@ -607,7 +702,7 @@ export async function POST(request: NextRequest) {
             }
             if (broken > 0) {
                 const shot = await captureHighlighted(
-                    'img', 'el.naturalWidth === 0 && el.src', '#ef4444', 'Broken'
+                    'img', 'el.complete && el.naturalWidth === 0 && el.src', '#ef4444', 'Broken'
                 );
                 if (shot) imageScreenshots.push({ label: `${broken} gambar broken`, image: shot });
             }
@@ -623,7 +718,7 @@ export async function POST(request: NextRequest) {
                     src: i.src.substring(0, 200),
                     alt: i.alt,
                     hasAlt: i.hasAlt,
-                    status: i.naturalWidth === 0 ? "broken" : "ok",
+                    status: (i.complete && i.naturalWidth === 0) ? "broken" : "ok",
                     width: i.width,
                     height: i.height,
                     loading: i.loading || "eager",
@@ -678,26 +773,28 @@ export async function POST(request: NextRequest) {
                 };
             }, targetUrl);
 
-            const linksToCheck = [...linkData.internalLinks, ...linkData.externalLinks].map(l => l.href).slice(0, 15);
+            const linksToCheck = [...linkData.internalLinks, ...linkData.externalLinks].map(l => l.href).slice(0, 30);
             const deadLinks: { url: string; status: number }[] = [];
 
-            for (const link of linksToCheck) {
-                try {
-                    const response = await page.evaluate(async (url: string) => {
-                        try {
-                            const res = await fetch(url, { method: "HEAD", mode: "no-cors" });
-                            return res.status;
-                        } catch {
-                            return 0;
+            // Use true server-side fetch — gives real HTTP status codes unlike no-cors browser fetch
+            await Promise.all(
+                linksToCheck.map(async (link) => {
+                    try {
+                        const headRes = await fetch(link, {
+                            method: "HEAD",
+                            redirect: "follow",
+                            signal: AbortSignal.timeout(5000),
+                            headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOChecker/1.0)" },
+                        }).catch(() => null);
+                        const status = headRes ? headRes.status : 0;
+                        if (status >= 400 || status === 0) {
+                            deadLinks.push({ url: link.substring(0, 200), status });
                         }
-                    }, link);
-                    if (response >= 400 || response === 0) {
-                        deadLinks.push({ url: link.substring(0, 200), status: response });
+                    } catch {
+                        deadLinks.push({ url: link.substring(0, 200), status: 0 });
                     }
-                } catch {
-                    deadLinks.push({ url: link.substring(0, 200), status: 0 });
-                }
-            }
+                })
+            );
 
             const linkIssues: string[] = [];
             if (deadLinks.length > 0) linkIssues.push(`${deadLinks.length} dead link(s) found`);
@@ -751,7 +848,7 @@ export async function POST(request: NextRequest) {
                 // Contrast check data
                 const contrastPairs: { element: string; text: string; fg: string; bg: string; fgRgb: number[]; bgRgb: number[]; fontSize: number; isBold: boolean }[] = [];
 
-                const sampleSize = Math.min(elements.length, 300);
+                const sampleSize = Math.min(elements.length, 1000);
                 const step = Math.max(1, Math.floor(elements.length / sampleSize));
 
                 for (let i = 0; i < elements.length; i += step) {
@@ -931,15 +1028,39 @@ export async function POST(request: NextRequest) {
             const domElements = await page.evaluate(() => document.querySelectorAll('*').length);
 
             // Image analysis from resources
-            const imageResources = resources.filter(r => r.type === 'image' || r.type === 'img');
+            const imageResources = resources.filter(r => r.type === 'image');
             const totalImageSize = imageResources.reduce((a, b) => a + b.size, 0);
             const largeImages = imageResources.filter(r => r.size > 200 * 1024);
 
             // JS/CSS analysis
-            const jsResources = resources.filter(r => r.type === 'script');
-            const cssResources = resources.filter(r => r.type === 'stylesheet');
+            const jsResources = resources.filter(r => r.type === 'js');
+            const cssResources = resources.filter(r => r.type === 'css');
             const totalJsSize = jsResources.reduce((a, b) => a + b.size, 0);
             const totalCssSize = cssResources.reduce((a, b) => a + b.size, 0);
+
+            // --- MINIFICATION CHECK ---
+            // Detect non-minified JS/CSS by URL — files without .min.js/.min.css in their path
+            const isNonMinified = (url: string, type: 'js' | 'css') => {
+                try {
+                    const pathname = new URL(url).pathname.toLowerCase();
+                    // Skip Next.js / webpack / vite built chunks (they are minified by build tools)
+                    if (/\/_next\/|\/\.vite\/|\/chunk\.|\/chunks\/|\/static\//.test(pathname)) return false;
+                    const ext = type === 'js' ? '.js' : '.css';
+                    const minExt = type === 'js' ? '.min.js' : '.min.css';
+                    // Flag if file ends with .js/.css but NOT .min.js/.min.css
+                    return pathname.endsWith(ext) && !pathname.includes('.min.');
+                } catch { return false; }
+            };
+
+            const nonMinifiedJs = jsResources
+                .filter(r => r.size > 20 * 1024 && isNonMinified(r.url, 'js'))
+                .sort((a, b) => b.size - a.size);
+            const nonMinifiedCss = cssResources
+                .filter(r => r.size > 20 * 1024 && isNonMinified(r.url, 'css'))
+                .sort((a, b) => b.size - a.size);
+
+            const nonMinifiedAll = [...nonMinifiedJs, ...nonMinifiedCss];
+            const nonMinifiedTotalSize = nonMinifiedAll.reduce((a, b) => a + b.size, 0);
 
             // --- 1. PAGE WEIGHT (25%) ---
             let pageWeightScore = 100;
@@ -955,6 +1076,19 @@ export async function POST(request: NextRequest) {
 
             if (totalCssSize > 300 * 1024) { pageWeightScore -= 10; pageWeightDetails.push(`CSS total ${formatSize(totalCssSize)} — consider removing unused CSS`); }
             else { pageWeightDetails.push(`✓ CSS ${formatSize(totalCssSize)} (within budget)`); }
+
+            // Minification check
+            if (nonMinifiedAll.length > 0) {
+                const penalty = Math.min(20, nonMinifiedAll.length * 5);
+                pageWeightScore -= penalty;
+                const top3 = nonMinifiedAll.slice(0, 3).map(r => {
+                    const name = (() => { try { return new URL(r.url).pathname.split('/').pop() || r.url; } catch { return r.url; } })();
+                    return `${name} (${formatSize(r.size)})`;
+                });
+                pageWeightDetails.push(`⚠ ${nonMinifiedAll.length} non-minified file(s) (${formatSize(nonMinifiedTotalSize)} total) — switch to .min versions: ${top3.join(", ")}${nonMinifiedAll.length > 3 ? ` +${nonMinifiedAll.length - 3} more` : ''}`);
+            } else if (jsResources.length > 0 || cssResources.length > 0) {
+                pageWeightDetails.push("✓ All JS/CSS files are minified");
+            }
 
             const pageWeightRating = pageWeightScore >= 90 ? "AAA" : pageWeightScore >= 70 ? "AA" : pageWeightScore >= 50 ? "A" : "Fail";
 
@@ -984,20 +1118,117 @@ export async function POST(request: NextRequest) {
             // --- 4. IMAGE OPTIMIZATION (25%) ---
             let imageOptScore = 100;
             const imageOptDetails: string[] = [];
-            if (imageResources.length === 0) {
-                imageOptDetails.push("✓ No images detected");
+
+            if (imageResources.length === 0 && (await page.evaluate(() => document.querySelectorAll("img").length)) === 0) {
+                imageOptDetails.push("✓ No images detected on this page");
             } else {
-                if (totalImageSize > 2 * 1024 * 1024) { imageOptScore -= 30; imageOptDetails.push(`⚠ Total image weight ${formatSize(totalImageSize)} — compress images (target < 1MB)`); }
-                else if (totalImageSize > 1024 * 1024) { imageOptScore -= 15; imageOptDetails.push(`Image weight ${formatSize(totalImageSize)} — consider next-gen formats (WebP/AVIF)`); }
-                else { imageOptDetails.push(`✓ Image weight ${formatSize(totalImageSize)} (good)`); }
+                // 4a. Total image weight (from network)
+                if (totalImageSize > 2 * 1024 * 1024) {
+                    imageOptScore -= 25;
+                    imageOptDetails.push(`⚠ Total image weight ${formatSize(totalImageSize)} — compress images (target < 1MB)`);
+                } else if (totalImageSize > 1024 * 1024) {
+                    imageOptScore -= 12;
+                    imageOptDetails.push(`Image weight ${formatSize(totalImageSize)} — consider next-gen formats (WebP/AVIF)`);
+                } else if (totalImageSize > 0) {
+                    imageOptDetails.push(`✓ Total image weight ${formatSize(totalImageSize)} (good)`);
+                }
 
-                if (largeImages.length > 0) { imageOptScore -= largeImages.length * 5; imageOptDetails.push(`${largeImages.length} image(s) > 200KB — resize and compress`); }
-                else { imageOptDetails.push("✓ No oversized images detected"); }
+                // 4b. Large individual images (> 200KB) — capped at -20
+                if (largeImages.length > 0) {
+                    const penalty = Math.min(20, largeImages.length * 5);
+                    imageOptScore -= penalty;
+                    imageOptDetails.push(`${largeImages.length} image(s) > 200KB — resize to display dimensions and compress`);
+                } else if (imageResources.length > 0) {
+                    imageOptDetails.push("✓ No oversized images detected (all < 200KB)");
+                }
 
-                const imageRatio = totalImageSize / Math.max(totalSize, 1);
-                if (imageRatio > 0.7) { imageOptScore -= 10; imageOptDetails.push(`Images are ${Math.round(imageRatio * 100)}% of page weight — optimize aggressively`); }
+                // 4c. Images proportion of total page weight
+                if (totalSize > 0) {
+                    const imageRatio = totalImageSize / totalSize;
+                    if (imageRatio > 0.7) {
+                        imageOptScore -= 8;
+                        imageOptDetails.push(`Images are ${Math.round(imageRatio * 100)}% of total page weight — optimize aggressively`);
+                    }
+                }
+
+                // 4d. DOM-based checks: format, dimensions mismatch, lazy loading
+                const imgAudit = await page.evaluate(() => {
+                    const imgs = Array.from(document.querySelectorAll<HTMLImageElement>("img"));
+                    let legacyFormat = 0;
+                    let oversizedDimensions = 0;
+                    let missingLazy = 0;
+                    const legacyExamples: string[] = [];
+                    const oversizedExamples: string[] = [];
+                    const noLazyExamples: string[] = [];
+
+                    for (const img of imgs) {
+                        const src = (img.currentSrc || img.src || img.getAttribute("src") || "").toLowerCase();
+                        if (!src || src.startsWith("data:")) continue;
+
+                        // Format check — flag JPEG/PNG/GIF where WebP/AVIF is not being used
+                        const isLegacy = /\.(jpe?g|png|gif)(\?|$)/.test(src);
+                        const isModern = /\.(webp|avif)(\?|$)/.test(src);
+                        if (isLegacy && !isModern) {
+                            legacyFormat++;
+                            if (legacyExamples.length < 3) legacyExamples.push(src.split("/").pop()?.substring(0, 50) || src.substring(0, 50));
+                        }
+
+                        // Dimension vs display size mismatch
+                        // If natural size is >2x the rendered size, it's oversized
+                        const renderedW = img.clientWidth;
+                        const naturalW = img.naturalWidth;
+                        if (renderedW > 0 && naturalW > 0 && naturalW > renderedW * 2.5) {
+                            oversizedDimensions++;
+                            if (oversizedExamples.length < 3) {
+                                oversizedExamples.push(`${naturalW}px → ${renderedW}px (${(src.split("/").pop() || src).substring(0, 40)})`);
+                            }
+                        }
+
+                        // Lazy loading — images below the fold (top > viewport height) without lazy loading
+                        const rect = img.getBoundingClientRect();
+                        const isAboveFold = rect.top < window.innerHeight;
+                        if (!isAboveFold && img.loading !== "lazy" && img.loading !== "eager") {
+                            missingLazy++;
+                            if (noLazyExamples.length < 3) noLazyExamples.push((src.split("/").pop() || src).substring(0, 50));
+                        }
+                    }
+
+                    return { legacyFormat, oversizedDimensions, missingLazy, legacyExamples, oversizedExamples, noLazyExamples, total: imgs.length };
+                });
+
+                // Apply DOM audit findings
+                if (imgAudit.total > 0) {
+                    // Format
+                    if (imgAudit.legacyFormat > 0) {
+                        const penalty = Math.min(15, Math.round((imgAudit.legacyFormat / imgAudit.total) * 15));
+                        imageOptScore -= penalty;
+                        const examples = imgAudit.legacyExamples.length > 0 ? ` (e.g. ${imgAudit.legacyExamples.join(", ")})` : "";
+                        imageOptDetails.push(`${imgAudit.legacyFormat} image(s) using legacy format (JPEG/PNG/GIF)${examples} — convert to WebP/AVIF`);
+                    } else {
+                        imageOptDetails.push("✓ All images use modern formats (WebP/AVIF)");
+                    }
+
+                    // Dimension mismatch
+                    if (imgAudit.oversizedDimensions > 0) {
+                        const penalty = Math.min(10, imgAudit.oversizedDimensions * 3);
+                        imageOptScore -= penalty;
+                        const examples = imgAudit.oversizedExamples.length > 0 ? `: ${imgAudit.oversizedExamples.join("; ")}` : "";
+                        imageOptDetails.push(`${imgAudit.oversizedDimensions} image(s) served at > 2.5× display size${examples} — resize to rendered dimensions`);
+                    } else {
+                        imageOptDetails.push("✓ Image dimensions match display sizes");
+                    }
+
+                    // Lazy loading
+                    if (imgAudit.missingLazy > 0) {
+                        imageOptScore -= Math.min(8, imgAudit.missingLazy * 2);
+                        imageOptDetails.push(`${imgAudit.missingLazy} below-fold image(s) missing loading="lazy" — add to defer off-screen images`);
+                    } else {
+                        imageOptDetails.push("✓ Off-screen images use lazy loading");
+                    }
+                }
             }
 
+            imageOptScore = Math.max(0, imageOptScore);
             const imageOptRating = imageOptScore >= 90 ? "AAA" : imageOptScore >= 70 ? "AA" : imageOptScore >= 50 ? "A" : "Fail";
 
             // --- 5. LOAD SPEED (15%) ---
@@ -1027,7 +1258,9 @@ export async function POST(request: NextRequest) {
 
             // ACTIONABLE RECOMMENDATIONS
             const recommendations: { priority: string; category: string; message: string }[] = [];
+            if (nonMinifiedAll.length > 0) recommendations.push({ priority: "High", category: "Minification", message: `${nonMinifiedAll.length} non-minified JS/CSS file(s) found (${formatSize(nonMinifiedTotalSize)} uncompressed). Use .min.js/.min.css versions or enable build-tool minification (Terser, cssnano). Potential savings: ~60–70% of current size.` });
             if (totalSize > 3 * 1024 * 1024) recommendations.push({ priority: "High", category: "Page Weight", message: `Reduce total page size from ${formatSize(totalSize)} to under 3MB. Audit large resources.` });
+
             if (totalJsSize > 500 * 1024) recommendations.push({ priority: "High", category: "JavaScript", message: `${formatSize(totalJsSize)} of JS loaded. Use code splitting, tree shaking, and lazy imports.` });
             if (largeImages.length > 0) recommendations.push({ priority: "High", category: "Images", message: `${largeImages.length} image(s) over 200KB. Use WebP/AVIF, resize to display dimensions, and add loading="lazy".` });
             if (totalRequests > 80) recommendations.push({ priority: "Medium", category: "Requests", message: `${totalRequests} HTTP requests. Bundle JS/CSS, use image sprites, and inline critical resources.` });
@@ -1981,18 +2214,316 @@ export async function POST(request: NextRequest) {
 
         }
 
-        // ===== OVERALL SCORE =====
+        // ===== CORE WEB VITALS =====
+        if ((scannerConfig.features as any).coreWebVitals !== false) {
+            try {
+                // Open a dedicated fresh page for CWV measurement so PerformanceObserver
+                // sees clean, uncontaminated timing data (not skewed by all the previous
+                // evaluate() calls / scrolling / highlights done in the main scan above).
+                const cwvPage = await browser.newPage();
+                cwvPage.setDefaultTimeout(30000);
+                cwvPage.setDefaultNavigationTimeout(30000);
+                await cwvPage.setCacheEnabled(false);
+                await cwvPage.setViewport({ width: 1440, height: 900 });
+
+                // Apply Lighthouse-style throttling via CDP for accurate CWV
+                // 4x CPU slowdown + Fast 3G/Slow 4G network profile
+                try {
+                    const client = await cwvPage.createCDPSession();
+                    await client.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+                    await client.send('Network.emulateNetworkConditions', {
+                        offline: false,
+                        latency: 150,
+                        downloadThroughput: (1.6 * 1024 * 1024) / 8, // 1.6 Mbps
+                        uploadThroughput: (750 * 1024) / 8           // 750 Kbps
+                    });
+                } catch { /* CDP not supported */ }
+
+                try {
+                    await cwvPage.goto(targetUrl, { waitUntil: "networkidle2", timeout: 25000 });
+                } catch {
+                    // Fallback: if networkidle2 times out, proceed with whatever is loaded
+                    try { await cwvPage.waitForSelector("body", { timeout: 5000 }); } catch { /* */ }
+                }
+
+                // Extra settle time so LCP/CLS observers fire their buffered entries
+                await new Promise(r => setTimeout(r, 2500));
+
+                // Extract all CWV metrics synchronously from buffered PerformanceEntries.
+                // Each metric is in its own try/catch so one failure doesn't kill the rest.
+                const cwvData = await cwvPage.evaluate(() => {
+                    let lcp: number | null = null;
+                    let cls = 0;
+                    let tbt = 0;
+
+                    // --- LCP ---
+                    try {
+                        const lcpEntries = performance.getEntriesByType("largest-contentful-paint");
+                        if (lcpEntries.length > 0) {
+                            lcp = lcpEntries[lcpEntries.length - 1].startTime;
+                        }
+                    } catch { /* not supported in this browser */ }
+
+                    // --- CLS ---
+                    try {
+                        const clsEntries = performance.getEntriesByType("layout-shift");
+                        for (const e of clsEntries) {
+                            if (!(e as any).hadRecentInput) {
+                                cls += (e as any).value ?? 0;
+                            }
+                        }
+                    } catch { /* not supported */ }
+
+                    // --- TBT (via Long Tasks) ---
+                    try {
+                        const longTasks = performance.getEntriesByType("longtask");
+                        for (const e of longTasks) {
+                            if (e.duration > 50) tbt += e.duration - 50;
+                        }
+                    } catch { /* not supported */ }
+
+                    // --- LCP fallback: Navigation Timing domContentLoadedEventEnd ---
+                    if (lcp === null) {
+                        try {
+                            const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+                            if (navEntries.length > 0 && navEntries[0].domContentLoadedEventEnd > 0) {
+                                lcp = navEntries[0].domContentLoadedEventEnd;
+                            }
+                        } catch { /* */ }
+                    }
+
+                    // --- Final LCP fallback: loadEventEnd ---
+                    if (lcp === null) {
+                        try {
+                            const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+                            if (navEntries.length > 0 && navEntries[0].loadEventEnd > 0) {
+                                lcp = navEntries[0].loadEventEnd;
+                            }
+                        } catch { /* */ }
+                    }
+
+                    return {
+                        lcp,
+                        cls: Math.round(cls * 1000) / 1000,
+                        tbt: Math.round(tbt),
+                    };
+                });
+
+                await cwvPage.close().catch(() => { /* ignore */ });
+
+                // LCP rating
+                const lcpMs = cwvData.lcp;
+                let lcpRating = "Unknown";
+                let lcpScore = 50;
+                if (lcpMs !== null) {
+                    if (lcpMs <= 2500) { lcpRating = "Good"; lcpScore = 100; }
+                    else if (lcpMs <= 4000) { lcpRating = "Needs Improvement"; lcpScore = 75; }
+                    else if (lcpMs <= 6000) { lcpRating = "Poor"; lcpScore = 40; }
+                    else { lcpRating = "Critical"; lcpScore = 10; }
+                }
+
+                // CLS rating
+                const clsVal = cwvData.cls ?? 0;
+                let clsRating = "Good";
+                let clsScore = 100;
+                if (clsVal > 0.25) { clsRating = "Poor"; clsScore = 20; }
+                else if (clsVal > 0.1) { clsRating = "Needs Improvement"; clsScore = 60; }
+
+                // TBT rating
+                const tbtMs = cwvData.tbt;
+                let tbtRating = "Good";
+                let tbtScore = 100;
+                if (tbtMs > 600) { tbtRating = "Poor"; tbtScore = 20; }
+                else if (tbtMs > 200) { tbtRating = "Needs Improvement"; tbtScore = 65; }
+
+                // Weighted CWV score: LCP 50%, CLS 30%, TBT 20%
+                cwvScore = Math.round(lcpScore * 0.5 + clsScore * 0.3 + tbtScore * 0.2);
+
+                const cwvIssues: string[] = [];
+                if (lcpMs !== null && lcpMs > 2500) cwvIssues.push(`LCP ${(lcpMs / 1000).toFixed(2)}s — exceeds 2.5s threshold (${lcpRating})`);
+                if (clsVal > 0.1) cwvIssues.push(`CLS ${clsVal.toFixed(3)} — exceeds 0.1 threshold (${clsRating})`);
+                if (tbtMs > 200) cwvIssues.push(`TBT ${tbtMs}ms — exceeds 200ms threshold (${tbtRating})`);
+
+                coreWebVitalsResult = {
+                    score: cwvScore,
+                    lcp: { value: lcpMs, rating: lcpRating },
+                    cls: { value: clsVal, rating: clsRating },
+                    tbt: { value: tbtMs, rating: tbtRating },
+                    issues: cwvIssues,
+                };
+            } catch (cwvErr) {
+                console.warn("[scan] Core Web Vitals error:", cwvErr);
+                // Always provide a fallback result so the CWV section is never blank
+                coreWebVitalsResult = {
+                    score: 0,
+                    lcp: { value: null, rating: "Unknown" },
+                    cls: { value: null, rating: "Unknown" },
+                    tbt: { value: null, rating: "Unknown" },
+                    issues: ["Core Web Vitals could not be measured for this page"],
+                };
+            }
+        }
+
+        // ===== STRUCTURED DATA (JSON-LD / Schema.org) =====
+        if ((scannerConfig.features as any).structuredData !== false) {
+            try {
+                const sdRaw = await page.evaluate(() => {
+                    const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+                    return scripts.map(s => (s.textContent || "").trim()).filter(Boolean);
+                });
+
+                const schemas: { type: string; valid: boolean; issues: string[]; raw: string }[] = [];
+                const REQUIRED_FIELDS: Record<string, string[]> = {
+                    Article: ["headline", "author", "datePublished"],
+                    Product: ["name", "offers"],
+                    FAQPage: ["mainEntity"],
+                    LocalBusiness: ["name", "address"],
+                    Organization: ["name"],
+                    WebSite: ["name", "url"],
+                    BreadcrumbList: ["itemListElement"],
+                    Review: ["reviewRating", "author"],
+                    Event: ["name", "startDate"],
+                    Person: ["name"],
+                };
+
+                for (const raw of sdRaw) {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        const processSchema = (obj: any) => {
+                            if (!obj || typeof obj !== "object") return;
+                            const type = obj["@type"] || "Unknown";
+                            const types = Array.isArray(type) ? type : [type];
+                            for (const t of types) {
+                                const issues: string[] = [];
+                                if (!obj["@context"]) issues.push("Missing @context");
+                                if (!obj["@type"]) issues.push("Missing @type");
+                                const required = REQUIRED_FIELDS[t] || [];
+                                for (const field of required) {
+                                    if (!obj[field]) issues.push(`Missing required field: ${field}`);
+                                }
+                                schemas.push({ type: t, valid: issues.length === 0, issues, raw: raw.substring(0, 500) });
+                            }
+                            // Recurse into @graph
+                            if (Array.isArray(obj["@graph"])) {
+                                for (const item of obj["@graph"]) processSchema(item);
+                            }
+                        };
+                        if (Array.isArray(parsed)) { for (const item of parsed) processSchema(item); }
+                        else processSchema(parsed);
+                    } catch {
+                        schemas.push({ type: "Unknown", valid: false, issues: ["Invalid JSON"], raw: raw.substring(0, 200) });
+                    }
+                }
+
+                const sdIssues: string[] = [];
+                if (schemas.length === 0) {
+                    sdScore = 30;
+                    sdIssues.push("No structured data (JSON-LD / Schema.org) found");
+                } else {
+                    const invalid = schemas.filter(s => !s.valid);
+                    if (invalid.length > 0) {
+                        sdScore = 70;
+                        sdIssues.push(`${invalid.length} schema(s) have validation issues`);
+                    } else {
+                        sdScore = 100;
+                    }
+                }
+
+                structuredDataResult = {
+                    score: sdScore,
+                    schemas,
+                    totalFound: schemas.length,
+                    issues: sdIssues,
+                };
+            } catch (sdErr) {
+                console.warn("[scan] Structured data error:", sdErr);
+            }
+        }
+
+        // ===== ROBOTS.TXT CHECK =====
+        if ((scannerConfig.features as any).robots !== false) {
+            try {
+                const origin = new URL(targetUrl).origin;
+                const robotsRes = await fetch(`${origin}/robots.txt`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
+                const exists = !!(robotsRes && robotsRes.ok && robotsRes.headers.get("content-type")?.includes("text"));
+                const content = exists ? (await robotsRes!.text()).substring(0, 5000) : null;
+
+                const robotsIssues: string[] = [];
+                let isBlockingPage = false;
+                let blockedByRule: string | null = null;
+                let googleBotAllowed = true;
+                let hasSitemapDirective = false;
+                let sitemapUrl: string | null = null;
+
+                if (!exists) {
+                    robotsIssues.push("robots.txt not found — search engines will crawl everything by default");
+                } else if (content) {
+                    const lines = content.split(/\r?\n/);
+                    let currentAgent: string[] = [];
+                    const pagePath = new URL(targetUrl).pathname || "/";
+
+                    for (const rawLine of lines) {
+                        const line = rawLine.trim();
+                        if (!line || line.startsWith("#")) continue;
+
+                        const [key, ...rest] = line.split(":");
+                        const val = rest.join(":").trim();
+
+                        if (key.toLowerCase() === "user-agent") {
+                            currentAgent = [val.toLowerCase()];
+                        } else if (key.toLowerCase() === "disallow") {
+                            const appliesToAll = currentAgent.includes("*");
+                            const appliesToGoogle = currentAgent.includes("googlebot");
+                            if (appliesToAll || appliesToGoogle) {
+                                if (val === "/" || pagePath.startsWith(val)) {
+                                    isBlockingPage = true;
+                                    blockedByRule = `Disallow: ${val} (user-agent: ${currentAgent.join(", ")})`;
+                                    if (appliesToGoogle) googleBotAllowed = false;
+                                }
+                            }
+                        } else if (key.toLowerCase() === "sitemap") {
+                            hasSitemapDirective = true;
+                            sitemapUrl = val;
+                        }
+                    }
+
+                    // Check Googlebot specifically
+                    const hasGooglebotSection = lines.some(l => l.toLowerCase().includes("user-agent: googlebot"));
+                    if (!hasGooglebotSection) googleBotAllowed = true; // Assume allowed if not explicitly blocked
+
+                    if (isBlockingPage) robotsIssues.push(`Page is blocked by robots.txt rule: ${blockedByRule}`);
+                    if (!hasSitemapDirective) robotsIssues.push("No Sitemap directive found in robots.txt — add Sitemap: https://yoursite.com/sitemap.xml");
+                }
+
+                robotsResult = {
+                    exists,
+                    content,
+                    isBlockingPage,
+                    blockedByRule,
+                    hasSitemapDirective,
+                    sitemapUrl,
+                    googleBotAllowed,
+                    issues: robotsIssues,
+                };
+            } catch (robotsErr) {
+                console.warn("[scan] Robots.txt error:", robotsErr);
+            }
+        }
+
+
         let totalWeight = 0;
         let earnedWeight = 0;
-        if (seoResult !== undefined) { earnedWeight += seoScore * 0.18; totalWeight += 0.18; }
+        if (seoResult !== undefined) { earnedWeight += seoScore * 0.16; totalWeight += 0.16; }
         if (headingResult !== undefined) { earnedWeight += headingScore * 0.08; totalWeight += 0.08; }
         if (imageResult !== undefined) { earnedWeight += imageScore * 0.08; totalWeight += 0.08; }
         if (linkResult !== undefined) { earnedWeight += linkScore * 0.12; totalWeight += 0.12; }
         if (visualResult !== undefined) { earnedWeight += visualScore * 0.08; totalWeight += 0.08; }
-        if (performanceResult !== undefined) { earnedWeight += perfScore * 0.13; totalWeight += 0.13; }
+        if (performanceResult !== undefined) { earnedWeight += perfScore * 0.08; totalWeight += 0.08; }
+        if (coreWebVitalsResult !== undefined) { earnedWeight += cwvScore * 0.10; totalWeight += 0.10; }
         if (accessibilityResult !== undefined) { earnedWeight += a11yScore * 0.08; totalWeight += 0.08; }
         if (responsiveResult !== undefined) { earnedWeight += responsiveScore * 0.08; totalWeight += 0.08; }
-        if (securityResult !== undefined) { earnedWeight += securityScore * 0.17; totalWeight += 0.17; }
+        if (securityResult !== undefined) { earnedWeight += securityScore * 0.15; totalWeight += 0.15; }
+        if (structuredDataResult !== undefined) { earnedWeight += sdScore * 0.07; totalWeight += 0.07; }
 
         const overallScore = totalWeight > 0 ? Math.round(earnedWeight / totalWeight) : 0;
 
@@ -2011,6 +2542,9 @@ export async function POST(request: NextRequest) {
             responsive: responsiveResult,
             security: securityResult,
             techStack: techStackResult,
+            coreWebVitals: coreWebVitalsResult,
+            structuredData: structuredDataResult,
+            robots: robotsResult,
             sitemap: sitemapResult,
         };
 

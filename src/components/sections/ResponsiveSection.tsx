@@ -70,7 +70,7 @@ export default function ResponsiveSection({ data }: { data: any }) {
                         </div>
                     </div>
 
-                    <div className="responsive-metric" style={{ border: `1px solid ${data.elementConsistency.hiddenOnMobile < data.elementConsistency.desktopVisible * 0.2 ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}` }}>
+                    <div className="responsive-metric" style={{ border: `1px solid ${data.elementConsistency.hiddenOnMobile < data.elementConsistency.desktopVisible * 0.5 ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}` }}>
                         <div className="responsive-metric__title">Element Consistency</div>
                         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
                             Desktop: {data.elementConsistency.desktopVisible} main elements<br />

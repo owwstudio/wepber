@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import jsPDF from "jspdf";
 import {
   Search,
   Globe,
@@ -18,6 +19,7 @@ import {
   Camera,
   Map,
   Smartphone,
+  Download,
   Network,
   Bug,
   ShieldCheck,
@@ -46,20 +48,48 @@ import CoreWebVitalsSection from "@/components/sections/CoreWebVitalsSection";
 import StructuredDataSection from "@/components/sections/StructuredDataSection";
 import RobotsSection from "@/components/sections/RobotsSection";
 
-const scanMessages = [
+// Import config to dynamically map scan messages
+import scannerConfig from "../../scanner.config.json";
+
+// Shared generic messages
+const initialScanMessages = [
   "Launching browser engine...",
-  "Navigating to target URL...",
-  "Analyzing SEO meta tags...",
-  "Scanning heading structure...",
-  "Auditing images...",
-  "Checking links & buttons...",
-  "Analyzing visual consistency...",
-  "Measuring performance metrics...",
-  "Collecting Core Web Vitals...",
-  "Running accessibility checks...",
-  "Checking structured data...",
-  "Parsing robots.txt...",
-  "Generating report...",
+  "Navigating to target URL..."
+];
+
+const compareMessages = [
+  ...initialScanMessages,
+  "Taking a pixel-perfect screenshot...",
+  "Processing the uploaded design mockup...",
+  "Running visual pixelmatch algorithm...",
+  "Calculating structural differences...",
+  "Generating side-by-side verification report..."
+];
+
+const featureMessagesMap: Record<string, string> = {
+  seo: "Analyzing SEO meta tags...",
+  headings: "Scanning heading structure...",
+  images: "Auditing images for accessibility...",
+  links: "Checking links & buttons...",
+  visual: "Checking visual contrast defaults...",
+  performance: "Measuring performance metrics...",
+  coreWebVitals: "Simulating Core Web Vitals loading metrics...",
+  accessibility: "Running ARIA accessibility checks...",
+  responsive: "Evaluating device layout properties...",
+  security: "Performing base security header sweeps...",
+  techStack: "Fingerprinting server configurations...",
+  structuredData: "Checking structured data schemas...",
+  robots: "Parsing robots.txt constraints...",
+  sitemap: "Scanning site graph properties..."
+};
+
+// Dynamically compile active scan messages from the JSON config
+const activeScanMessages = [
+  ...initialScanMessages,
+  ...Object.entries(scannerConfig.features)
+    .filter(([_, isEnabled]) => isEnabled)
+    .map(([key]) => featureMessagesMap[key] || `Scanning ${key}...`),
+  "Generating final assessment report..."
 ];
 
 const SECTION_KEYS = ["seo", "headings", "images", "links", "visual", "performance", "accessibility", "responsive", "security", "coreWebVitals", "structuredData", "robots", "sitemap"] as const;
@@ -67,6 +97,7 @@ type SectionKey = (typeof SECTION_KEYS)[number];
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
+  const [designImage, setDesignImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +110,9 @@ export default function HomePage() {
     Object.fromEntries(SECTION_KEYS.map((k) => [k, null])) as Record<SectionKey, HTMLDivElement | null>
   );
 
+  const reportRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
   const scrollToSection = useCallback((key: SectionKey) => {
     setOpenSections((prev) => ({ ...prev, [key]: true }));
     setTimeout(() => {
@@ -90,6 +124,116 @@ export default function HomePage() {
     setOpenSections((prev) => ({ ...prev, [key]: val }));
   }, []);
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDesignImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setDesignImage(null);
+    }
+  };
+
+  const clearImage = () => {
+    setDesignImage(null);
+    // Reset file input value
+    const fileInput = document.getElementById("design-file") as HTMLInputElement;
+    if (fileInput) fileInput.value = "";
+  };
+
+  const downloadPDF = async () => {
+    if (!result) return;
+    try {
+      setIsExporting(true);
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      let yOffset = 20;
+      const margin = 15;
+      const lineHeight = 10;
+
+      // Title & Meta
+      const targetUrl = result.url || url;
+      const reportDate = result.scanDate ? new Date(result.scanDate) : new Date();
+
+      pdf.setFontSize(22);
+      pdf.text("COAXA Validation Report", margin, yOffset);
+      yOffset += lineHeight * 1.5;
+
+      pdf.setFontSize(11);
+      pdf.setTextColor(100);
+      pdf.text(`Target URL: ${targetUrl}`, margin, yOffset);
+      yOffset += lineHeight;
+      pdf.text(`Generated On: ${reportDate.toLocaleString()}`, margin, yOffset);
+      yOffset += lineHeight * 2;
+
+      // Report Body
+      pdf.setTextColor(0);
+
+      if (result.diffImage) {
+        // Compare Mode
+        pdf.setFontSize(16);
+        pdf.text("Design Match Verification", margin, yOffset);
+        yOffset += lineHeight;
+
+        pdf.setFontSize(12);
+        pdf.text(`Similarity Score: ${result.similarityScore.toFixed(2)}%`, margin, yOffset);
+        yOffset += lineHeight;
+        pdf.text(`Mismatched Pixels: ${result.mismatchedPixels.toLocaleString()}`, margin, yOffset);
+        yOffset += lineHeight;
+        pdf.text(`Total Pixels Analyzed: ${result.totalPixels.toLocaleString()}`, margin, yOffset);
+      } else {
+        // Scan Mode
+        pdf.setFontSize(16);
+        pdf.text("Overall Metrics", margin, yOffset);
+        yOffset += lineHeight;
+
+        pdf.setFontSize(12);
+        pdf.text(`Overall Quality Score: ${result.overallScore}/100`, margin, yOffset);
+        yOffset += lineHeight * 2;
+
+        pdf.setFontSize(14);
+        pdf.text("Section Breakdown:", margin, yOffset);
+        yOffset += lineHeight;
+
+        pdf.setFontSize(12);
+        SECTION_KEYS.forEach((key) => {
+          if (result[key] && typeof result[key].score === "number") {
+            if (yOffset > 270) {
+              pdf.addPage();
+              yOffset = 20;
+            }
+            const friendlyName = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim();
+            const sc = result[key].score;
+            const scoreLabel = sc === -1 ? "N/A" : `${sc}/100`;
+            pdf.text(`• ${friendlyName}: ${scoreLabel}`, margin + 5, yOffset);
+            yOffset += lineHeight;
+          }
+        });
+      }
+
+      let hostName = "website";
+      try {
+        if (targetUrl.includes('//')) {
+          hostName = new URL(targetUrl).hostname.replace('www.', '');
+        } else {
+          hostName = targetUrl.replace('www.', '');
+        }
+      } catch (e) {
+        // Fallback silently if URL parser fails
+      }
+
+      const dateStr = reportDate.toISOString().split('T')[0];
+      pdf.save(`coaxa-report-${dateStr}-${hostName}.pdf`);
+    } catch (error) {
+      console.error("Failed to export PDF:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleScan = async (scanUrl?: string) => {
     const targetUrl = scanUrl || url.trim();
     if (!targetUrl) return;
@@ -100,9 +244,12 @@ export default function HomePage() {
     setScanMsg(0);
     setElapsed(0);
 
-    // Rotate scan progress messages
+    // Rotate scan progress messages based on the current mode
     const msgInterval = setInterval(() => {
-      setScanMsg((prev) => (prev + 1) % scanMessages.length);
+      setScanMsg((prev) => {
+        const pool = designImage ? compareMessages : activeScanMessages;
+        return (prev + 1) % pool.length;
+      });
     }, 3000);
 
     // Elapsed time counter (updates every second)
@@ -110,15 +257,18 @@ export default function HomePage() {
       setElapsed((prev) => prev + 1);
     }, 1000);
 
-    // Client-side hard timeout: abort after 120s
+    // Client-side hard timeout: abort after 120s (or more for compare)
     const controller = new AbortController();
     const clientTimeout = setTimeout(() => controller.abort(), 120_000);
 
     try {
-      const res = await fetch("/api/scan", {
+      const endpoint = designImage ? "/api/compare" : "/api/scan";
+      const payload = designImage ? { url: targetUrl, designImage } : { url: targetUrl };
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
@@ -145,8 +295,7 @@ export default function HomePage() {
 
         {/* Header */}
         <motion.div
-          className="page__header"
-          style={result ? { paddingTop: "0vh" } : { paddingTop: "20vh" }}
+          className={`page__header ${result ? 'page__header--compact' : 'page__header--expanded'}`}
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -155,7 +304,7 @@ export default function HomePage() {
           </div>
           <h1 className="page__headline">COAXA</h1>
           <p className="page__subheadline">
-            a web analyzer tool to analyze any website for SEO compliance, broken elements, visual consistency, and overall quality.
+            An advanced web analyzer to validate SEO compliance, overall quality, and pixel-perfect design accuracy.
           </p>
         </motion.div>
 
@@ -169,7 +318,6 @@ export default function HomePage() {
           <div className="search-form__row">
             <div className="search-form__input-wrap">
               <Globe size={18} className="search-form__icon" />
-              {/* <label for="url">URL:</label> */}
               <input
                 name="url"
                 className="glow-input search-form__input"
@@ -180,14 +328,69 @@ export default function HomePage() {
                 disabled={loading}
               />
             </div>
-            <button className="btn-primary" onClick={() => handleScan()} disabled={loading || !url.trim()}>
-              {loading ? (
-                <RotateCw size={18} style={{ animation: "spin 1s linear infinite" }} />
+
+            <div className="search-form__file-wrap">
+              {designImage ? (
+                <div className="search-form__file-ready">
+                  <ImageIcon size={18} color="var(--success)" />
+                  <span className="search-form__file-ready-text">Design Ready</span>
+                  <button onClick={clearImage} className="search-form__file-clear">
+                    <XCircle size={16} />
+                  </button>
+                </div>
               ) : (
-                <span className="search-form__btn-content">
-                  <Search size={18} /> Scan
-                </span>
+                <>
+                  <input
+                    type="file"
+                    id="design-file"
+                    accept="image/png, image/jpeg, image/webp"
+                    onChange={handleImageUpload}
+                    className="search-form__file-input"
+                    disabled={loading}
+                  />
+                  <div className="glow-input search-form__input search-form__file-placeholder">
+                    <ImageIcon size={18} className="search-form__file-icon" />
+                  </div>
+                </>
               )}
+            </div>
+
+            <button className="btn-primary" onClick={() => handleScan()} disabled={loading || !url.trim()}>
+              <AnimatePresence mode="wait">
+                {loading ? (
+                  <motion.div
+                    key="loading"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <RotateCw size={18} style={{ animation: "spin 1s linear infinite" }} />
+                  </motion.div>
+                ) : designImage ? (
+                  <motion.span
+                    key="compare"
+                    className="search-form__btn-content"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Layers size={18} /> Compare
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="scan"
+                    className="search-form__btn-content"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Search size={18} /> Scan
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </button>
           </div>
         </motion.div>
@@ -221,7 +424,7 @@ export default function HomePage() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                   >
-                    {scanMessages[scanMsg]}
+                    {designImage ? compareMessages[scanMsg] : activeScanMessages[scanMsg]}
                   </motion.p>
                 </AnimatePresence>
               </div>
@@ -259,48 +462,144 @@ export default function HomePage() {
         {/* Results */}
         <AnimatePresence>
           {result && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
+            <motion.div ref={reportRef} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} className="report-container" style={{ padding: "20px 0" }}>
 
               {/* Overall Score */}
-              <motion.div
-                className="glass-card score-card"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-              >
-                <div className="score-card__url-row">
-                  <ExternalLink size={14} className="score-card__url-icon" />
-                  <a
-                    href={result.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="score-card__url-link"
+              {!result.diffImage && (
+                <>
+                  <motion.div
+                    className="glass-card score-card"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
                   >
-                    {result.url}
-                  </a>
-                </div>
-                <div className="score-card__ring-wrap">
-                  <ScoreRing score={result.overallScore} size={160} />
-                </div>
-                <h2 className="score-card__title">Overall Quality Score</h2>
-                <p className="score-card__meta">
-                  Scanned on {new Date(result.scanDate).toLocaleString()}
-                </p>
-              </motion.div>
+                    <div className="score-card__url-row">
+                      <ExternalLink size={14} className="score-card__url-icon" />
+                      <a
+                        href={result.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="score-card__url-link"
+                      >
+                        {result.url}
+                      </a>
+                    </div>
+                    <div className="score-card__ring-wrap">
+                      <ScoreRing score={result.overallScore} size={160} />
+                    </div>
+                    <h2 className="score-card__title">Overall Quality Score</h2>
+                    <p className="score-card__meta">
+                      Scanned on {new Date(result.scanDate).toLocaleString()}
+                    </p>
+                  </motion.div>
+
+                  {/* Download PDF Action for Scan Mode */}
+                  <div style={{ textAlign: "center", marginBottom: "30px" }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={downloadPDF}
+                      disabled={isExporting}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 20px", fontSize: "14px" }}
+                    >
+                      {isExporting ? (
+                        <RotateCw size={16} style={{ animation: "spin 1s linear infinite" }} />
+                      ) : (
+                        <Download size={16} />
+                      )}
+                      {isExporting ? "Generating PDF..." : "Download Report as PDF"}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Design Verification Result */}
+              {result.diffImage && (
+                <>
+                  <motion.div
+                    className="glass-card compare-card"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                  >
+                    <div className="compare-card__header">
+                      <div>
+                        <h2 className="score-card__title compare-card__title">Design Match Verification</h2>
+                        <p className="compare-card__subtitle">
+                          A pixel-perfect comparison between the uploaded design and the live website.
+                        </p>
+                        <div className="compare-card__badge">
+                          <Bug size={14} className="compare-card__badge-icon" />
+                          <span className="compare-card__badge-text">
+                            <strong className="compare-card__badge-highlight">{result.mismatchedPixels.toLocaleString()}</strong> mismatched pixels out of {result.totalPixels.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="score-card__ring-wrap compare-card__ring-wrapper">
+                        <ScoreRing score={result.similarityScore} size={160} />
+                      </div>
+                    </div>
+
+                    <div className="compare-card__grid">
+                      <div className="compare-card__column">
+                        <h4 className="compare-card__column-title">
+                          <ImageIcon size={16} className="text-muted" /> Design Mockup
+                        </h4>
+                        <div className="screenshot-card__viewer compare-card__viewer">
+                          <img src={result.originalDesignImage || designImage!} alt="Original Design" className="compare-card__img" />
+                        </div>
+                      </div>
+                      <div className="compare-card__column">
+                        <h4 className="compare-card__column-title">
+                          <Globe size={16} className="text-muted" /> Live Website
+                        </h4>
+                        <div className="screenshot-card__viewer compare-card__viewer">
+                          <img src={result.websiteScreenshot} alt="Live Website" className="compare-card__img" />
+                        </div>
+                      </div>
+                      <div className="compare-card__column">
+                        <h4 className="compare-card__column-title compare-card__column-title--danger">
+                          <Zap size={16} /> Visual Differences
+                        </h4>
+                        <div className="screenshot-card__viewer compare-card__viewer compare-card__viewer--diff">
+                          <img src={result.diffImage} alt="Differences" className="compare-card__img" />
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* Download PDF Action for Compare Mode */}
+                  <div style={{ textAlign: "center", marginBottom: "30px" }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={downloadPDF}
+                      disabled={isExporting}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 20px", fontSize: "14px" }}
+                    >
+                      {isExporting ? (
+                        <RotateCw size={16} style={{ animation: "spin 1s linear infinite" }} />
+                      ) : (
+                        <Download size={16} />
+                      )}
+                      {isExporting ? "Generating PDF..." : "Download Report as PDF"}
+                    </button>
+                  </div>
+                </>
+              )}
 
               {/* Category Scores Grid */}
-              <div className="scores-grid">
-                {result.seo && <MiniScore score={result.seo.score} label="SEO" icon={FileText} onClick={() => scrollToSection("seo")} />}
-                {result.headings && <MiniScore score={result.headings.score} label="Headings" icon={Heading} onClick={() => scrollToSection("headings")} />}
-                {result.images && <MiniScore score={result.images.score} label="Images" icon={ImageIcon} onClick={() => scrollToSection("images")} />}
-                {result.links && <MiniScore score={result.links.score} label="Links" icon={Link2} onClick={() => scrollToSection("links")} />}
-                {result.visual && <MiniScore score={result.visual.score} label="Visual" icon={Palette} onClick={() => scrollToSection("visual")} />}
-                {result.performance && <MiniScore score={result.performance.score} label="Performance" icon={Zap} onClick={() => scrollToSection("performance")} />}
-                {result.accessibility && <MiniScore score={result.accessibility.score} label="Accessibility" icon={Accessibility} onClick={() => scrollToSection("accessibility")} />}
-                {result.responsive && <MiniScore score={result.responsive.score} label="Responsive" icon={Smartphone} onClick={() => scrollToSection("responsive")} />}
-                {result.security && <MiniScore score={result.security.score} label="Security" icon={ShieldCheck} onClick={() => scrollToSection("security")} />}
-                {result.coreWebVitals && <MiniScore score={result.coreWebVitals.score} label="Core Web Vitals" icon={Zap} onClick={() => scrollToSection("coreWebVitals")} />}
-                {result.structuredData && <MiniScore score={result.structuredData.score} label="Structured Data" icon={Network} onClick={() => scrollToSection("structuredData")} />}
-              </div>
+              {!result.diffImage && (
+                <div className="scores-grid">
+                  {result.seo && <MiniScore score={result.seo.score} label="SEO" icon={FileText} onClick={() => scrollToSection("seo")} />}
+                  {result.headings && <MiniScore score={result.headings.score} label="Headings" icon={Heading} onClick={() => scrollToSection("headings")} />}
+                  {result.images && <MiniScore score={result.images.score} label="Images" icon={ImageIcon} onClick={() => scrollToSection("images")} />}
+                  {result.links && <MiniScore score={result.links.score} label="Links" icon={Link2} onClick={() => scrollToSection("links")} />}
+                  {result.visual && <MiniScore score={result.visual.score} label="Visual" icon={Palette} onClick={() => scrollToSection("visual")} />}
+                  {result.performance && <MiniScore score={result.performance.score} label="Performance" icon={Zap} onClick={() => scrollToSection("performance")} />}
+                  {result.accessibility && <MiniScore score={result.accessibility.score} label="Accessibility" icon={Accessibility} onClick={() => scrollToSection("accessibility")} />}
+                  {result.responsive && <MiniScore score={result.responsive.score} label="Responsive" icon={Smartphone} onClick={() => scrollToSection("responsive")} />}
+                  {result.security && <MiniScore score={result.security.score} label="Security" icon={ShieldCheck} onClick={() => scrollToSection("security")} />}
+                  {result.coreWebVitals && <MiniScore score={result.coreWebVitals.score} label="Core Web Vitals" icon={Zap} onClick={() => scrollToSection("coreWebVitals")} />}
+                  {result.structuredData && <MiniScore score={result.structuredData.score} label="Structured Data" icon={Network} onClick={() => scrollToSection("structuredData")} />}
+                </div>
+              )}
 
               {/* Tech Stack */}
               {result.techStack && (
@@ -425,7 +724,7 @@ export default function HomePage() {
 
               {/* Footer */}
               <div className="page__footer">
-                SEO &amp; Quality Checker — Powered by Puppeteer
+                COAXA — Powered by One Week Wonders
               </div>
             </motion.div>
           )}

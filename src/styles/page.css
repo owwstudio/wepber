@@ -38,6 +38,7 @@
     font-weight: 900;
     background: var(--accent-gradient);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     line-height: 1.1;
     margin-bottom: 14px;
@@ -48,6 +49,7 @@
     font-weight: 900;
     background: var(--accent-gradient);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     line-height: 1.1;
     margin-bottom: 14px;
@@ -493,4 +495,179 @@
 .tech-stack__empty-icon {
     margin: 0 auto 10px;
     opacity: 0.3;
+}
+
+/* ==============================
+   Compare Card BEM Styles (Moved from globals.css)
+   ============================== */
+.compare-card {
+    margin-bottom: 30px;
+    padding: 30px;
+}
+
+.compare-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 24px;
+}
+
+.compare-card__title {
+    margin-top: 0;
+    text-align: left;
+    font-size: 24px;
+}
+
+.compare-card__subtitle {
+    color: var(--text-muted);
+    margin-top: 8px;
+    font-size: 14px;
+}
+
+.compare-card__badge {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 6px 12px;
+    border-radius: 8px;
+    margin-top: 16px;
+}
+
+.compare-card__badge-icon {
+    color: var(--danger);
+    margin-right: 6px;
+}
+
+.compare-card__badge-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.compare-card__badge-highlight {
+    color: var(--danger);
+    font-weight: bold;
+}
+
+.compare-card__ring-wrapper {
+    transform: scale(0.85);
+    transform-origin: right center;
+}
+
+.compare-card__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+}
+
+.compare-card__column {
+    display: flex;
+    flex-direction: column;
+}
+
+.compare-card__column-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+}
+
+.compare-card__column-title--danger {
+    color: var(--danger);
+}
+
+.compare-card__viewer {
+    flex: 1;
+    max-height: 700px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.compare-card__viewer--diff {
+    border-color: rgba(239, 68, 68, 0.3);
+    background: #000;
+}
+
+.compare-card__img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+/* ==============================
+   File Upload BEM Styles
+   ============================== */
+.search-form__file-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.search-form__file-ready {
+    display: flex;
+    align-items: center;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid var(--success);
+    padding: 10px 16px;
+    border-radius: 12px;
+    height: 100%;
+    gap: 8px;
+}
+
+.search-form__file-ready-text {
+    font-size: 14px;
+    color: var(--success);
+}
+
+.search-form__file-clear {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-left: 8px;
+    padding: 4px;
+}
+
+.search-form__file-input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 10;
+}
+
+.search-form__file-placeholder {
+    width: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    height: 100%;
+}
+
+.search-form__file-icon {
+    color: var(--text-muted);
+}
+
+/* ==============================
+   Header transition BEM Styles
+   ============================== */
+.page__header {
+    transition: padding-top 0.5s ease;
+}
+
+.page__header--compact {
+    padding-top: 0vh !important;
+}
+
+.page__header--expanded {
+    padding-top: 20vh !important;
 }

@@ -61,7 +61,7 @@ function isSafeUrl(parsed: URL): { safe: boolean; reason: string } {
     return { safe: true, reason: "" };
 }
 
-export const maxDuration = 60;
+export const maxDuration = 300; // Increased to 5 minutes to prevent Vercel timeouts for heavy sites
 
 interface ScanResult {
     url: string;
@@ -82,6 +82,12 @@ interface ScanResult {
     structuredData?: StructuredDataResult;
     robots?: RobotsResult;
     sitemap?: { urls: { loc: string; lastmod?: string; changefreq?: string; priority?: string }[]; source: string | null; error?: string };
+    similarityScore?: number;
+    mismatchedPixels?: number;
+    totalPixels?: number;
+    diffImage?: string;
+    websiteScreenshot?: string;
+    originalDesignImage?: string;
 }
 
 interface SEOResult {
@@ -377,9 +383,9 @@ export async function POST(request: NextRequest) {
             "Pragma": "no-cache",
         });
 
-        // Global page timeout — all evaluate/click/etc calls default to 25s
-        page.setDefaultTimeout(25000);
-        page.setDefaultNavigationTimeout(25000);
+        // Global page timeout
+        page.setDefaultTimeout(40000);
+        page.setDefaultNavigationTimeout(45000);
 
         // Performance tracking
         const startTime = Date.now();
@@ -410,30 +416,23 @@ export async function POST(request: NextRequest) {
         });
 
         // Navigate with graceful fallback:
-        // 1st try: networkidle2 (waits for network to be quiet — ideal but may hang on SPAs)
-        // 2nd try: domcontentloaded (faster, works on most pages)
+        // Heavy WordPress sites often fail networkidle2 due to constant tracker pings.
+        // We navigate with domcontentloaded first, then wait a little for the network to quiet down.
         try {
-            await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 20000 });
+            await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+            // Optional network idle wait, but don't fail if it times out
+            try {
+                // Wait up to 5s for network to go somewhat idle
+                await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 5000 });
+            } catch { /* ignore */ }
         } catch (navErr) {
-            const msg = navErr instanceof Error ? navErr.message : String(navErr);
-            if (msg.includes("timeout") || msg.includes("TimeoutError")) {
-                console.warn(`[scan] networkidle2 timed out for ${targetUrl}, retrying with domcontentloaded`);
-                // Page may already be partially loaded — try to continue from current state
-                try {
-                    await page.waitForSelector("body", { timeout: 5000 });
-                } catch {
-                    // If still no body, do a fresh goto with a lenient strategy
-                    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
-                }
-            } else {
-                throw navErr; // DNS error, connection refused, etc — surface to user
-            }
+            throw navErr; // DNS error, page completely unreachable, or took > 45s
         }
         const loadTime = Date.now() - startTime;
 
         // Give the page an extra moment to settle any client-side redirects or dynamic renders
         // especially important when some scanning features are disabled, making execution too fast.
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 8000));
 
         // ===== FULL PAGE SCREENSHOT =====
         let fullScreenshot = null;
@@ -629,8 +628,8 @@ export async function POST(request: NextRequest) {
             // Scroll through the page to trigger lazy-loaded images to load
             await page.evaluate(async () => {
                 await new Promise<void>((resolve) => {
-                    const scrollStep = window.innerHeight;
-                    const scrollDelay = 120;
+                    const scrollStep = window.innerHeight * 3;
+                    const scrollDelay = 50;
                     let scrolled = 0;
                     const totalHeight = document.body.scrollHeight;
                     const timer = setInterval(() => {
@@ -1356,7 +1355,7 @@ export async function POST(request: NextRequest) {
             });
 
             // Capture per-element screenshots for each a11y category
-            const MAX_ELEMENT_SCREENSHOTS = 15;
+            const MAX_ELEMENT_SCREENSHOTS = 3;
 
             async function captureElementScreenshots(
                 selector: string,
@@ -1533,7 +1532,7 @@ export async function POST(request: NextRequest) {
             const responsiveIssues: string[] = [];
             let mobileScreenshot: string | null = null;
             let desktopElements = { nav: 0, content: 0 };
-            let mobileMetrics = { hasHorizontalScroll: false, tapIssues: 0, tapTotal: 0, mobileElements: { nav: 0, content: 0 } };
+            let mobileMetrics = { hasHorizontalScroll: false, tapIssues: 0, tapTotal: 0, tapElements: [] as any[], mobileElements: { nav: 0, content: 0 } };
 
             try {
                 // 1. Get desktop visibility counts before switching
@@ -1572,18 +1571,30 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Emulate mobile layout and calculate layout metrics
-                let mobileMetrics = { hasHorizontalScroll: false, tapIssues: 0, tapTotal: 0, tapElements: [] as { html: string; width: number; height: number; x: number; y: number }[], mobileElements: { nav: 0, content: 0 } };
                 try {
                     mobileMetrics = await page.evaluate(() => {
-                        const hasHorizontalScroll = document.documentElement.scrollWidth > window.innerWidth;
+                        // Better detection for horizontal scroll issue
+                        const hasHorizontalScroll =
+                            document.documentElement.scrollWidth > window.innerWidth ||
+                            document.body.scrollWidth > window.innerWidth;
 
-                        // Tap targets checking (simplified: check if small tap targets exist)
+                        // Tap targets checking: check if tap targets are too small, while ensuring they are actually visible
                         const tapTargets = Array.from(document.querySelectorAll('a, button, input, select'));
                         const tapElements: { html: string; width: number; height: number; x: number; y: number }[] = [];
+                        let visibleTapTotal = 0;
 
                         tapTargets.forEach(el => {
                             const rect = el.getBoundingClientRect();
-                            if (rect.width > 0 && rect.height > 0) {
+                            const style = window.getComputedStyle(el);
+
+                            // Only evaluate elements that are visible on screen
+                            const isVisible = rect.width > 0 && rect.height > 0 &&
+                                style.display !== 'none' &&
+                                style.visibility !== 'hidden' &&
+                                parseFloat(style.opacity || "1") > 0;
+
+                            if (isVisible) {
+                                visibleTapTotal++;
                                 if (rect.width < 44 || rect.height < 44) {
                                     if (tapElements.length < 20) {
                                         tapElements.push({
@@ -1613,7 +1624,7 @@ export async function POST(request: NextRequest) {
                         return {
                             hasHorizontalScroll,
                             tapIssues: tapElements.length,
-                            tapTotal: tapTargets.length,
+                            tapTotal: visibleTapTotal,
                             tapElements,
                             mobileElements
                         };
@@ -1624,13 +1635,13 @@ export async function POST(request: NextRequest) {
                 }
 
                 if (mobileMetrics.hasHorizontalScroll) {
-                    responsiveScore -= 30;
+                    responsiveScore -= 40;
                     responsiveIssues.push("Page has horizontal scroll on mobile devices (layout overflow).");
                 }
 
                 if (mobileMetrics.tapIssues > 0) {
-                    // penalize slightly based on proportion, up to 20 pts max
-                    const tapPenalty = Math.min(20, Math.round((mobileMetrics.tapIssues / Math.max(1, mobileMetrics.tapTotal)) * 40));
+                    // penalize based on proportion, up to 30 pts max
+                    const tapPenalty = Math.min(30, Math.round((mobileMetrics.tapIssues / Math.max(1, mobileMetrics.tapTotal)) * 60));
                     responsiveScore -= tapPenalty;
                     if (tapPenalty > 5) {
                         responsiveIssues.push(`${mobileMetrics.tapIssues} interactive elements are too small (target size < 44px).`);
@@ -1641,9 +1652,10 @@ export async function POST(request: NextRequest) {
                 const mobileTotal = mobileMetrics.mobileElements.nav + mobileMetrics.mobileElements.content;
                 const hiddenOnMobile = Math.max(0, desktopTotal - mobileTotal);
 
-                if (hiddenOnMobile > desktopTotal * 0.3) {
+                // Re-added with a more lenient 50% threshold logic
+                if (hiddenOnMobile > desktopTotal * 0.5) {
                     responsiveScore -= 20;
-                    responsiveIssues.push(`High element inconsistency: ${hiddenOnMobile} elements from desktop are hidden on mobile.`);
+                    responsiveIssues.push(`High element inconsistency: ${hiddenOnMobile} elements from desktop are hidden on mobile (missing ≥ 50%).`);
                 }
 
                 responsiveResult = {
@@ -2226,61 +2238,59 @@ export async function POST(request: NextRequest) {
                 await cwvPage.setCacheEnabled(false);
                 await cwvPage.setViewport({ width: 1440, height: 900 });
 
-                // Apply Lighthouse-style throttling via CDP for accurate CWV
-                // 4x CPU slowdown + Fast 3G/Slow 4G network profile
-                try {
-                    const client = await cwvPage.createCDPSession();
-                    await client.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-                    await client.send('Network.emulateNetworkConditions', {
-                        offline: false,
-                        latency: 150,
-                        downloadThroughput: (1.6 * 1024 * 1024) / 8, // 1.6 Mbps
-                        uploadThroughput: (750 * 1024) / 8           // 750 Kbps
-                    });
-                } catch { /* CDP not supported */ }
+                // Set up observers BEFORE navigation to properly catch LCP, CLS, and Long Tasks (TBT)
+                // because performance.getEntriesByType doesn't work for these metric types synchronously
+                await cwvPage.evaluateOnNewDocument(() => {
+                    const cwv = { lcp: null as number | null, cls: 0, tbt: 0 };
+                    (window as any).__cwv = cwv;
+
+                    try {
+                        new PerformanceObserver((list) => {
+                            for (const entry of list.getEntries()) {
+                                cwv.lcp = entry.startTime;
+                            }
+                        }).observe({ type: 'largest-contentful-paint', buffered: true });
+                    } catch (e) { }
+
+                    try {
+                        new PerformanceObserver((list) => {
+                            for (const entry of list.getEntries() as any[]) {
+                                if (!entry.hadRecentInput) {
+                                    cwv.cls += entry.value;
+                                }
+                            }
+                        }).observe({ type: 'layout-shift', buffered: true });
+                    } catch (e) { }
+
+                    try {
+                        new PerformanceObserver((list) => {
+                            for (const entry of list.getEntries()) {
+                                if (entry.duration > 50) {
+                                    cwv.tbt += entry.duration - 50;
+                                }
+                            }
+                        }).observe({ type: 'longtask', buffered: true });
+                    } catch (e) { }
+                });
+
+                // Network and CPU throttling removed to drastically speed up scans
+                // (Previously: 4x CPU slowdown + Slow 4G)
 
                 try {
-                    await cwvPage.goto(targetUrl, { waitUntil: "networkidle2", timeout: 25000 });
+                    await cwvPage.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+                    try { await cwvPage.waitForNavigation({ waitUntil: "networkidle2", timeout: 5000 }); } catch { /* */ }
                 } catch {
-                    // Fallback: if networkidle2 times out, proceed with whatever is loaded
+                    // Fallback: if it times out, proceed with whatever is loaded
                     try { await cwvPage.waitForSelector("body", { timeout: 5000 }); } catch { /* */ }
                 }
 
                 // Extra settle time so LCP/CLS observers fire their buffered entries
-                await new Promise(r => setTimeout(r, 2500));
+                await new Promise(r => setTimeout(r, 1000));
 
-                // Extract all CWV metrics synchronously from buffered PerformanceEntries.
-                // Each metric is in its own try/catch so one failure doesn't kill the rest.
+                // Extract all CWV metrics from the injected observer data.
                 const cwvData = await cwvPage.evaluate(() => {
-                    let lcp: number | null = null;
-                    let cls = 0;
-                    let tbt = 0;
-
-                    // --- LCP ---
-                    try {
-                        const lcpEntries = performance.getEntriesByType("largest-contentful-paint");
-                        if (lcpEntries.length > 0) {
-                            lcp = lcpEntries[lcpEntries.length - 1].startTime;
-                        }
-                    } catch { /* not supported in this browser */ }
-
-                    // --- CLS ---
-                    try {
-                        const clsEntries = performance.getEntriesByType("layout-shift");
-                        for (const e of clsEntries) {
-                            if (!(e as any).hadRecentInput) {
-                                cls += (e as any).value ?? 0;
-                            }
-                        }
-                    } catch { /* not supported */ }
-
-                    // --- TBT (via Long Tasks) ---
-                    try {
-                        const longTasks = performance.getEntriesByType("longtask");
-                        for (const e of longTasks) {
-                            if (e.duration > 50) tbt += e.duration - 50;
-                        }
-                    } catch { /* not supported */ }
+                    const cwv = (window as any).__cwv || { lcp: null, cls: 0, tbt: 0 };
+                    let { lcp, cls, tbt } = cwv;
 
                     // --- LCP fallback: Navigation Timing domContentLoadedEventEnd ---
                     if (lcp === null) {

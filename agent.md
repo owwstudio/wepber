@@ -80,6 +80,11 @@ This file contains context, historical decisions, and bug-fix notes specifically
 - **Solution:** Added `sharp` to both `/api/scan` and `/api/compare` to heavily compress generated buffers down to `webp({ quality: 60-70 })` format and bounded maximum resolution widths (e.g., 800px or 1200px) before `base64` stringification. 
 - **Rule:** Do NOT return raw, uncompressed PNG buffers containing DOM renders or screenshots directly to the Next.js Client. Always funnel the buffer through a `sharp` downscaler/`webp` converter first, and set hard loop limits on arrays of images (e.g., `maxLimit: 3` for accessibility issue snapshots) to strictly preserve bandwidth.
 
+## 14. Compare Viewport Scaling & Animations
+- **Issue:** Using `page.screenshot({ fullPage: true })` on tall UI designs forces Puppeteer to quietly mutate the underlying viewport to the page's actual `scrollHeight` right before capture. This silently breaks any `100vh` responsive DOM layouts. Furthermore, fast-scrolling triggers Intersection Observers (like AOS, WOW.js, Elementor Invisible) which immediately hide lower elements in the DOM when the camera snaps back to the top.
+- **Solution:** Forcefully inject a global `page.addStyleTag()` CSS script to disable `animation` and `transition`, while forcing `opacity: 1 !important` on known hidden plugin classes (e.g. `[data-aos]`). Use `window.scrollTo({ top: 0, behavior: "instant" })` instead of a hard origin snap, and replace `fullPage` with `{ clip, captureBeyondViewport: true }`.
+- **Rule:** Never use `fullPage: true` for Compare functionalities, as it stealthily destroys ratio integrity for `100vh` elements. Instead, utilize `clip: { captureBeyondViewport: true }`. You must also kill CSS transitions globally to preempt "vanishing component" bugs triggered by lazy-load UI frameworks.
+
 ## Workflow Reminders
 - When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file.
 - Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).

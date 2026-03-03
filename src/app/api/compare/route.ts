@@ -56,24 +56,67 @@ export async function POST(request: Request) {
 
         const page = await browser.newPage();
 
-        // Match viewport precisely to the design image to get an exact 1:1 comparison
-        await page.setViewport({ width: designWidth, height: designHeight });
+        // Match viewport width to design, but keep a standard height so 100vh elements don't distort
+        await page.setViewport({ width: designWidth, height: 1080 });
         await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 45000 });
 
-        // Wait a small buffer to let animations/fonts settle
-        await new Promise(r => setTimeout(r, 1500));
+        // Force disable all CSS animations, transitions, and common Intersection Observer hidden states (AOS, Elementor)
+        await page.addStyleTag({
+            content: `
+                * {
+                    animation-duration: 0.001ms !important;
+                    animation-iteration-count: 1 !important;
+                    transition-duration: 0.001ms !important;
+                }
+                .elementor-invisible, [data-aos], .wow, .animated {
+                    opacity: 1 !important;
+                    transform: none !important;
+                    visibility: visible !important;
+                }
+            `
+        });
 
-        // 3. Take screenshot of the website
-        // We crop the screenshot to match the exact height of the design
-        const screenshotBuffer = await page.screenshot({
-            type: "png",
-            clip: { x: 0, y: 0, width: designWidth, height: designHeight }
-            // omitBackground: false
+        // Auto-scroll to trigger any remaining lazy loading assets
+        await page.evaluate(async () => {
+            await new Promise<void>((resolve) => {
+                let totalHeight = 0;
+                const distance = 400;
+                const timer = setInterval(() => {
+                    const scrollHeight = document.body.scrollHeight;
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+                    if (totalHeight >= scrollHeight) {
+                        clearInterval(timer);
+                        window.scrollTo({ top: 0, behavior: "instant" }); // Reset back to top instantly
+                        resolve();
+                    }
+                }, 100);
+            });
+        });
+
+        // Wait a larger buffer to let lazy-loaded images paint and sticky headers re-anchor
+        await new Promise(r => setTimeout(r, 2500));
+
+        // 3. Take a screenshot via captureBeyondViewport to prevent 100vh elements from stretching
+        const captureHeight = Math.max(1080, designHeight);
+        const rawScreenshotBuffer = await page.screenshot({
+            type: "webp",
+            clip: { x: 0, y: 0, width: designWidth, height: captureHeight },
+            captureBeyondViewport: true,
+            quality: 100
         });
         await browser.close();
 
-        // Ensure screenshot is exactly RGBA
-        const processedScreenshotBuffer = await sharp(screenshotBuffer)
+        // 4. Crop/Extend the screenshot precisely to match the designImage boundaries using sharp
+        const rawMeta = await sharp(rawScreenshotBuffer).metadata();
+        const rawHeight = rawMeta.height || 1080;
+
+        const cropHeight = Math.min(rawHeight, designHeight);
+        const paddingBottom = Math.max(0, designHeight - rawHeight);
+
+        const processedScreenshotBuffer = await sharp(rawScreenshotBuffer)
+            .extract({ left: 0, top: 0, width: designWidth, height: cropHeight })
+            .extend({ bottom: paddingBottom, background: { r: 255, g: 255, b: 255, alpha: 1 } })
             .ensureAlpha()
             .raw()
             .toBuffer();
@@ -107,7 +150,14 @@ export async function POST(request: Request) {
             .toBuffer();
         const diffBase64 = `data:image/webp;base64,${compressedDiff.toString("base64")}`;
 
-        const compressedScreenshot = await sharp(screenshotBuffer)
+        // Create a display-safe version of the perfectly cropped original screenshot
+        const displayScreenshotBuffer = await sharp(rawScreenshotBuffer)
+            .extract({ left: 0, top: 0, width: designWidth, height: cropHeight })
+            .extend({ bottom: paddingBottom, background: { r: 255, g: 255, b: 255, alpha: 1 } })
+            .webp({ quality: 70 })
+            .toBuffer();
+
+        const compressedScreenshot = await sharp(displayScreenshotBuffer)
             .resize({ width: 1200, withoutEnlargement: true })
             .webp({ quality: 70 })
             .toBuffer();

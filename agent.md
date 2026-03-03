@@ -85,6 +85,24 @@ This file contains context, historical decisions, and bug-fix notes specifically
 - **Solution:** Forcefully inject a global `page.addStyleTag()` CSS script to disable `animation` and `transition`, while forcing `opacity: 1 !important` on known hidden plugin classes (e.g. `[data-aos]`). Use `window.scrollTo({ top: 0, behavior: "instant" })` instead of a hard origin snap, and replace `fullPage` with `{ clip, captureBeyondViewport: true }`.
 - **Rule:** Never use `fullPage: true` for Compare functionalities, as it stealthily destroys ratio integrity for `100vh` elements. Instead, utilize `clip: { captureBeyondViewport: true }`. You must also kill CSS transitions globally to preempt "vanishing component" bugs triggered by lazy-load UI frameworks.
 
+## 15. Modular Architecture & Component Decomposition
+- **Refactor:** `src/app/page.tsx` was decomposed from a 753-line monolith into a ~170-line thin orchestrator that delegates all logic and rendering to dedicated modules.
+- **Architecture:**
+  - **Types** (`src/types/scan.ts`): Shared `SECTION_KEYS` constant and `SectionKey` type used across hooks, configs, and components.
+  - **Config** (`src/config/`): `scanMessages.ts` for loading message arrays built from `scanner.config.json`; `sectionRegistry.ts` for data-driven section metadata (icon, title, label, component, scoring).
+  - **Hooks** (`src/hooks/`): `useScan.ts` (scan execution, loading, progress, AbortController), `useDesignImage.ts` (file upload handling), `useSections.ts` (open/close state, scroll-into-view).
+  - **Utilities** (`src/utils/downloadPDF.ts`): PDF generation extracted as a standalone async function.
+  - **Components** (`src/components/home/`): `SearchForm`, `LoadingState`, `ErrorState`, `ScanScoreCard`, `CompareResult`, `ScoresGrid`, `SectionsGrid`, with barrel export via `index.ts`.
+- **Rules:**
+  - Page-level files (`page.tsx`) MUST remain thin orchestrators under 200 lines. Extract business logic to custom hooks, configuration to config files, and UI to focused components.
+  - To add a new scan section: edit ONLY `src/config/sectionRegistry.ts` and `src/types/scan.ts` (add key). Do NOT hardcode JSX blocks in `page.tsx`.
+  - To add a new loading message: edit ONLY `src/config/scanMessages.ts` `featureMessagesMap`. Do NOT hardcode message arrays in component files.
+  - Custom hooks must be self-contained — all state, refs, and callbacks related to a single concern live in one hook.
+  - Component directories with 3+ exports MUST have a barrel export (`index.ts`) for clean imports.
+  - Component props should use explicit TypeScript interfaces, not bare `any`. The `any` eslint-disable is allowed only at result-level pass-through boundaries.
+  - The `sectionRegistry` pattern (data-driven component rendering) should be the default approach for any feature that renders a dynamic list of similar UI blocks.
+
 ## Workflow Reminders
 - When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file.
 - Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).
+- When adding a new section: (1) create section component in `src/components/sections/`, (2) add key to `SECTION_KEYS` in `src/types/scan.ts`, (3) add entry to `sectionRegistry` in `src/config/sectionRegistry.ts`. No changes needed in `page.tsx`.

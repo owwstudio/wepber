@@ -3,7 +3,7 @@ import { Globe } from "lucide-react";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export default function SitemapSection({ data, onScanUrl }: { data: any; onScanUrl: (url: string) => void }) {
+export default function SitemapSection({ data, onScanUrl }: { data: any; onScanUrl?: (url: string) => void }) {
     const [visibleCount, setVisibleCount] = useState(20);
     const [filter, setFilter] = useState("");
 
@@ -53,7 +53,7 @@ export default function SitemapSection({ data, onScanUrl }: { data: any; onScanU
                         {visible.map((u: any, i: number) => {
                             const pathOnly = (() => { try { return new URL(u.loc).pathname; } catch { return u.loc; } })();
                             return (
-                                <div key={i} className="sitemap-item" onClick={() => onScanUrl(u.loc)}>
+                                <div key={i} className="sitemap-item" onClick={() => onScanUrl?.(u.loc)}>
                                     <Globe size={14} style={{ color: "#3b82f6", flexShrink: 0 }} />
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

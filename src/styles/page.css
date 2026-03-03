@@ -227,6 +227,20 @@
     font-size: 13px;
 }
 
+/* PDF Download Action Row — contextually bound below score card (§11) */
+.score-card__action-row {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.score-card__download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+}
+
 /* Category Score Grid */
 .scores-grid {
     display: flex;

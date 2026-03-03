@@ -75,6 +75,11 @@ This file contains context, historical decisions, and bug-fix notes specifically
 - **Solution:** Configured `downloadPDF` to fall back on parent-level React hook states if standard result keys are missing (e.g. `const targetUrl = result.url || url;`).
 - **Rule:** If a single UI component or logic handler processes responses from *multiple* API structures, you must strictly implement logical `||` fallbacks or conditional existence checks for metadata properties to prevent `undefined` variables bleeding into physical exports or user views.
 
+## 13. Vercel Serverless Function Limits (Payload Compression)
+- **Issue:** Full-page website screenshots and large Pixelmatch arrays were generating extreme `data:image/png;base64` lengths that violated Vercel's strict 4.5MB Serverless Function response limits, crashing the API (`FUNCTION_PAYLOAD_TOO_LARGE`).
+- **Solution:** Added `sharp` to both `/api/scan` and `/api/compare` to heavily compress generated buffers down to `webp({ quality: 60-70 })` format and bounded maximum resolution widths (e.g., 800px or 1200px) before `base64` stringification. 
+- **Rule:** Do NOT return raw, uncompressed PNG buffers containing DOM renders or screenshots directly to the Next.js Client. Always funnel the buffer through a `sharp` downscaler/`webp` converter first, and set hard loop limits on arrays of images (e.g., `maxLimit: 3` for accessibility issue snapshots) to strictly preserve bandwidth.
+
 ## Workflow Reminders
 - When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file.
 - Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).

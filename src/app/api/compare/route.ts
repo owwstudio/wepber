@@ -98,16 +98,26 @@ export async function POST(request: Request) {
         // Calculate similarity percentage (e.g. 98.45%)
         const similarityScore = (matchedPixels / totalPixels) * 100;
 
-        // Convert the diff PNG buffer to base64 so we can display it on the frontend
+        // 5. Compress payloads to WebP before sending to avoid Vercel FUNCTION_PAYLOAD_TOO_LARGE limits
         const diffBuffer = PNG.sync.write(diffPNG);
-        const diffBase64 = `data:image/png;base64,${diffBuffer.toString("base64")}`;
+
+        const compressedDiff = await sharp(diffBuffer)
+            .resize({ width: 1200, withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toBuffer();
+        const diffBase64 = `data:image/webp;base64,${compressedDiff.toString("base64")}`;
+
+        const compressedScreenshot = await sharp(screenshotBuffer)
+            .resize({ width: 1200, withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toBuffer();
 
         return NextResponse.json({
             similarityScore: Math.round(similarityScore), // Return integer without decimals
             mismatchedPixels,
             totalPixels,
             diffImage: diffBase64,
-            websiteScreenshot: `data:image/png;base64,${Buffer.from(screenshotBuffer).toString("base64")}`,
+            websiteScreenshot: `data:image/webp;base64,${compressedScreenshot.toString("base64")}`,
             originalDesignImage: designImage
         });
 

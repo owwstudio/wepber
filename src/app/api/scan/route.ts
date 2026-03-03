@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
+import sharp from "sharp";
 import fs from "fs";
 import path from "path";
 
@@ -438,7 +439,13 @@ export async function POST(request: NextRequest) {
         let fullScreenshot = null;
         try {
             const fullScreenshotBuffer = await page.screenshot({ fullPage: true, type: "webp", quality: 60 });
-            fullScreenshot = `data:image/webp;base64,${Buffer.from(fullScreenshotBuffer).toString("base64")}`;
+
+            const compressedBuffer = await sharp(fullScreenshotBuffer)
+                .resize({ width: 800, withoutEnlargement: true })
+                .webp({ quality: 60 })
+                .toBuffer();
+
+            fullScreenshot = `data:image/webp;base64,${compressedBuffer.toString("base64")}`;
         } catch (screenshotError) {
             console.warn("[scan] Failed to capture full page screenshot:", screenshotError);
         }
@@ -464,14 +471,18 @@ export async function POST(request: NextRequest) {
             selector: string,
             filterFn: string,
             color: string,
-            label: string
+            label: string,
+            maxLimit: number = 3
         ): Promise<string | null> {
             const count = await page.evaluate(
-                (sel: string, fn: string, clr: string) => {
+                (sel: string, fn: string, clr: string, limit: number) => {
                     const els = Array.from(document.querySelectorAll(sel));
                     const filtered = els.filter(new Function('el', `return ${fn}`) as (el: Element) => boolean);
                     if (filtered.length === 0) return 0;
-                    filtered.forEach((el) => {
+
+                    const targetElements = filtered.slice(0, limit);
+
+                    targetElements.forEach((el) => {
                         const htmlEl = el as HTMLElement;
                         htmlEl.setAttribute('data-seo-highlight', 'true');
                         htmlEl.style.outline = `3px solid ${clr}`;
@@ -491,10 +502,10 @@ export async function POST(request: NextRequest) {
                         htmlEl.appendChild(badge);
                     });
                     // Scroll first element into view
-                    filtered[0].scrollIntoView({ block: 'center' });
+                    targetElements[0].scrollIntoView({ block: 'center' });
                     return filtered.length;
                 },
-                selector, filterFn, color
+                selector, filterFn, color, maxLimit
             );
 
             if (count === 0) return null;
@@ -1381,9 +1392,16 @@ export async function POST(request: NextRequest) {
                     selector, filterFn
                 );
 
+                let processedScreenshots = 0;
                 for (let i = 0; i < Math.min(indices.length, limit); i++) {
                     const handle = handles[indices[i]];
                     if (!handle) { screenshots.push(null); continue; }
+
+                    if (processedScreenshots >= limit) {
+                        screenshots.push(null);
+                        continue;
+                    }
+
                     try {
                         // Scroll element into view and add highlight
                         await page.evaluate(
@@ -1401,6 +1419,7 @@ export async function POST(request: NextRequest) {
                         // Take viewport screenshot (captures element in context)
                         const buf = await page.screenshot({ type: 'webp', quality: 65, fullPage: false });
                         screenshots.push(`data:image/webp;base64,${Buffer.from(buf).toString('base64')}`);
+                        processedScreenshots++;
 
                         // Remove highlight
                         await page.evaluate((el: Element) => {

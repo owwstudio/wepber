@@ -62,6 +62,29 @@ function isSafeUrl(parsed: URL): { safe: boolean; reason: string } {
     return { safe: true, reason: "" };
 }
 
+// ===== SCAN CONSTANTS =====
+// Navigation
+const NAV_TIMEOUT_MS = 45_000;
+const NETWORK_IDLE_TIMEOUT_MS = 5_000;
+
+// Adaptive settle time after page load
+const SPA_SETTLE_MS = 4_000;      // SPA frameworks (React, Vue, Next, Angular, Svelte)
+const STATIC_SETTLE_MS = 2_000;   // static / non-SPA sites
+
+// Image lazy-load
+const LAZY_SCROLL_SETTLE_MS = 800;   // wait after scroll-to-bottom for lazy images
+
+// Link checking
+const MAX_LINKS_TO_CHECK = 30;
+const LINK_CHECK_TIMEOUT_MS = 5_000;
+const LINK_CHECK_BATCH_SIZE = 10;    // max concurrent HEAD requests per batch
+
+// Screenshot timing
+const SCREENSHOT_SETTLE_MS = 50;     // wait between highlight and screenshot capture
+
+// Core Web Vitals
+const CWV_SETTLE_MS = 1_000;        // settle time for PerformanceObserver buffered entries
+
 export const maxDuration = 300; // Increased to 5 minutes to prevent Vercel timeouts for heavy sites
 
 interface ScanResult {
@@ -420,20 +443,147 @@ export async function POST(request: NextRequest) {
         // Heavy WordPress sites often fail networkidle2 due to constant tracker pings.
         // We navigate with domcontentloaded first, then wait a little for the network to quiet down.
         try {
-            await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+            await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
             // Optional network idle wait, but don't fail if it times out
             try {
-                // Wait up to 5s for network to go somewhat idle
-                await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 5000 });
+                await page.waitForNavigation({ waitUntil: "networkidle2", timeout: NETWORK_IDLE_TIMEOUT_MS });
             } catch { /* ignore */ }
         } catch (navErr) {
             throw navErr; // DNS error, page completely unreachable, or took > 45s
         }
         const loadTime = Date.now() - startTime;
 
-        // Give the page an extra moment to settle any client-side redirects or dynamic renders
-        // especially important when some scanning features are disabled, making execution too fast.
-        await new Promise(r => setTimeout(r, 8000));
+        // Adaptive SPA wait: detect JS frameworks to determine settle time.
+        // SPAs (React, Vue, Next.js, Angular, Svelte) need longer for hydration/rendering;
+        // static sites settle quickly and don't need the extra wait.
+        const isSPA = await page.evaluate(() => {
+            const w = window as any;
+            return !!(
+                w.__NEXT_DATA__ || document.getElementById('__NEXT_DATA__') ||
+                w.React || w.__REACT_DEVTOOLS_GLOBAL_HOOK__ ||
+                w.Vue || w.__VUE__ || w.__NUXT__ || w.$nuxt ||
+                w.angular || document.querySelector('[ng-version]') || document.querySelector('[ng-app]') ||
+                w.Svelte || document.querySelector('[data-svelte-h]')
+            );
+        });
+        await new Promise(r => setTimeout(r, isSPA ? SPA_SETTLE_MS : STATIC_SETTLE_MS));
+
+        // ===== CORE WEB VITALS (started in parallel) =====
+        // Launch CWV measurement on a dedicated page NOW so it runs concurrently
+        // with the main scan sections below. The dedicated page is needed because
+        // PerformanceObserver data on the main page gets contaminated by our
+        // evaluate() calls, scrolling, and DOM highlighting.
+        let cwvPromise: Promise<CoreWebVitalsResult | null> | null = null;
+        if ((scannerConfig.features as any).coreWebVitals !== false) {
+            cwvPromise = (async (): Promise<CoreWebVitalsResult | null> => {
+                let cwvPage: Awaited<ReturnType<typeof browser.newPage>> | null = null;
+                try {
+                    cwvPage = await browser.newPage();
+                    cwvPage.setDefaultTimeout(30000);
+                    cwvPage.setDefaultNavigationTimeout(30000);
+                    await cwvPage.setCacheEnabled(false);
+                    await cwvPage.setViewport({ width: 1440, height: 900 });
+
+                    // Set up observers BEFORE navigation to catch LCP, CLS, Long Tasks
+                    await cwvPage.evaluateOnNewDocument(() => {
+                        const cwv = { lcp: null as number | null, cls: 0, tbt: 0 };
+                        (window as any).__cwv = cwv;
+                        try {
+                            new PerformanceObserver((list) => {
+                                for (const entry of list.getEntries()) cwv.lcp = entry.startTime;
+                            }).observe({ type: 'largest-contentful-paint', buffered: true });
+                        } catch { /* */ }
+                        try {
+                            new PerformanceObserver((list) => {
+                                for (const entry of list.getEntries() as any[]) {
+                                    if (!entry.hadRecentInput) cwv.cls += entry.value;
+                                }
+                            }).observe({ type: 'layout-shift', buffered: true });
+                        } catch { /* */ }
+                        try {
+                            new PerformanceObserver((list) => {
+                                for (const entry of list.getEntries()) {
+                                    if (entry.duration > 50) cwv.tbt += entry.duration - 50;
+                                }
+                            }).observe({ type: 'longtask', buffered: true });
+                        } catch { /* */ }
+                    });
+
+                    try {
+                        await cwvPage.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+                        try { await cwvPage.waitForNavigation({ waitUntil: "networkidle2", timeout: NETWORK_IDLE_TIMEOUT_MS }); } catch { /* */ }
+                    } catch {
+                        try { await cwvPage.waitForSelector("body", { timeout: 5000 }); } catch { /* */ }
+                    }
+
+                    await new Promise(r => setTimeout(r, CWV_SETTLE_MS));
+
+                    const cwvData = await cwvPage.evaluate(() => {
+                        const cwv = (window as any).__cwv || { lcp: null, cls: 0, tbt: 0 };
+                        let { lcp, cls, tbt } = cwv;
+                        if (lcp === null) {
+                            try {
+                                const nav = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+                                if (nav.length > 0 && nav[0].domContentLoadedEventEnd > 0) lcp = nav[0].domContentLoadedEventEnd;
+                            } catch { /* */ }
+                        }
+                        if (lcp === null) {
+                            try {
+                                const nav = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+                                if (nav.length > 0 && nav[0].loadEventEnd > 0) lcp = nav[0].loadEventEnd;
+                            } catch { /* */ }
+                        }
+                        return { lcp, cls: Math.round(cls * 1000) / 1000, tbt: Math.round(tbt) };
+                    });
+
+                    await cwvPage.close().catch(() => { /* ignore */ });
+                    cwvPage = null;
+
+                    // LCP rating
+                    const lcpMs = cwvData.lcp;
+                    let lcpRating = "Unknown", lcpScore = 50;
+                    if (lcpMs !== null) {
+                        if (lcpMs <= 2500) { lcpRating = "Good"; lcpScore = 100; }
+                        else if (lcpMs <= 4000) { lcpRating = "Needs Improvement"; lcpScore = 75; }
+                        else if (lcpMs <= 6000) { lcpRating = "Poor"; lcpScore = 40; }
+                        else { lcpRating = "Critical"; lcpScore = 10; }
+                    }
+                    // CLS rating
+                    const clsVal = cwvData.cls ?? 0;
+                    let clsRating = "Good", clsScore = 100;
+                    if (clsVal > 0.25) { clsRating = "Poor"; clsScore = 20; }
+                    else if (clsVal > 0.1) { clsRating = "Needs Improvement"; clsScore = 60; }
+                    // TBT rating
+                    const tbtMs = cwvData.tbt;
+                    let tbtRating = "Good", tbtScore = 100;
+                    if (tbtMs > 600) { tbtRating = "Poor"; tbtScore = 20; }
+                    else if (tbtMs > 200) { tbtRating = "Needs Improvement"; tbtScore = 65; }
+
+                    const cwvIssues: string[] = [];
+                    if (lcpMs !== null && lcpMs > 2500) cwvIssues.push(`LCP ${(lcpMs / 1000).toFixed(2)}s — exceeds 2.5s threshold (${lcpRating})`);
+                    if (clsVal > 0.1) cwvIssues.push(`CLS ${clsVal.toFixed(3)} — exceeds 0.1 threshold (${clsRating})`);
+                    if (tbtMs > 200) cwvIssues.push(`TBT ${tbtMs}ms — exceeds 200ms threshold (${tbtRating})`);
+
+                    return {
+                        score: Math.round(lcpScore * 0.5 + clsScore * 0.3 + tbtScore * 0.2),
+                        lcp: { value: lcpMs, rating: lcpRating },
+                        cls: { value: clsVal, rating: clsRating },
+                        tbt: { value: tbtMs, rating: tbtRating },
+                        issues: cwvIssues,
+                    };
+                } catch (cwvErr) {
+                    console.warn("[scan] Core Web Vitals error:", cwvErr);
+                    if (cwvPage) await cwvPage.close().catch(() => { /* ignore */ });
+                    return {
+                        score: 0,
+                        lcp: { value: null, rating: "Unknown" },
+                        cls: { value: null, rating: "Unknown" },
+                        tbt: { value: null, rating: "Unknown" },
+                        issues: ["Core Web Vitals could not be measured for this page"],
+                    };
+                }
+            })();
+        }
 
         // ===== FULL PAGE SCREENSHOT =====
         let fullScreenshot = null;
@@ -636,24 +786,14 @@ export async function POST(request: NextRequest) {
         // ===== IMAGE AUDIT =====
         if (scannerConfig.features.images) {
 
-            // Scroll through the page to trigger lazy-loaded images to load
-            await page.evaluate(async () => {
-                await new Promise<void>((resolve) => {
-                    const scrollStep = window.innerHeight * 3;
-                    const scrollDelay = 50;
-                    let scrolled = 0;
-                    const totalHeight = document.body.scrollHeight;
-                    const timer = setInterval(() => {
-                        window.scrollBy(0, scrollStep);
-                        scrolled += scrollStep;
-                        if (scrolled >= totalHeight) {
-                            clearInterval(timer);
-                            window.scrollTo(0, 0);
-                            resolve();
-                        }
-                    }, scrollDelay);
-                });
-            });
+            // Single-pass scroll to trigger lazy-loaded images.
+            // Jumps straight to bottom (fires all IntersectionObserver entries),
+            // waits for lazy images to start loading, then scrolls back to top.
+            await page.evaluate(async (settleMs: number) => {
+                window.scrollTo(0, document.body.scrollHeight);
+                await new Promise<void>(r => setTimeout(r, settleMs));
+                window.scrollTo(0, 0);
+            }, LAZY_SCROLL_SETTLE_MS);
 
             // Wait for images that just became visible to finish loading
             await page.evaluate(async () => {
@@ -783,28 +923,33 @@ export async function POST(request: NextRequest) {
                 };
             }, targetUrl);
 
-            const linksToCheck = [...linkData.internalLinks, ...linkData.externalLinks].map(l => l.href).slice(0, 30);
+            const linksToCheck = [...linkData.internalLinks, ...linkData.externalLinks].map(l => l.href).slice(0, MAX_LINKS_TO_CHECK);
             const deadLinks: { url: string; status: number }[] = [];
 
-            // Use true server-side fetch — gives real HTTP status codes unlike no-cors browser fetch
-            await Promise.all(
-                linksToCheck.map(async (link) => {
-                    try {
-                        const headRes = await fetch(link, {
-                            method: "HEAD",
-                            redirect: "follow",
-                            signal: AbortSignal.timeout(5000),
-                            headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOChecker/1.0)" },
-                        }).catch(() => null);
-                        const status = headRes ? headRes.status : 0;
-                        if (status >= 400 || status === 0) {
-                            deadLinks.push({ url: link.substring(0, 200), status });
+            // Batched link checking with Promise.allSettled for resilience.
+            // Batches of LINK_CHECK_BATCH_SIZE prevent hammering target servers
+            // and allSettled ensures one hung request doesn't block the rest.
+            for (let i = 0; i < linksToCheck.length; i += LINK_CHECK_BATCH_SIZE) {
+                const batch = linksToCheck.slice(i, i + LINK_CHECK_BATCH_SIZE);
+                await Promise.allSettled(
+                    batch.map(async (link) => {
+                        try {
+                            const headRes = await fetch(link, {
+                                method: "HEAD",
+                                redirect: "follow",
+                                signal: AbortSignal.timeout(LINK_CHECK_TIMEOUT_MS),
+                                headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOChecker/1.0)" },
+                            }).catch(() => null);
+                            const status = headRes ? headRes.status : 0;
+                            if (status >= 400 || status === 0) {
+                                deadLinks.push({ url: link.substring(0, 200), status });
+                            }
+                        } catch {
+                            deadLinks.push({ url: link.substring(0, 200), status: 0 });
                         }
-                    } catch {
-                        deadLinks.push({ url: link.substring(0, 200), status: 0 });
-                    }
-                })
-            );
+                    })
+                );
+            }
 
             const linkIssues: string[] = [];
             if (deadLinks.length > 0) linkIssues.push(`${deadLinks.length} dead link(s) found`);
@@ -1414,7 +1559,7 @@ export async function POST(request: NextRequest) {
                             },
                             handle, color
                         );
-                        await new Promise(r => setTimeout(r, 150));
+                        await new Promise(r => setTimeout(r, SCREENSHOT_SETTLE_MS));
 
                         // Take viewport screenshot (captures element in context)
                         const buf = await page.screenshot({ type: 'webp', quality: 65, fullPage: false });
@@ -2245,151 +2390,13 @@ export async function POST(request: NextRequest) {
 
         }
 
-        // ===== CORE WEB VITALS =====
-        if ((scannerConfig.features as any).coreWebVitals !== false) {
-            try {
-                // Open a dedicated fresh page for CWV measurement so PerformanceObserver
-                // sees clean, uncontaminated timing data (not skewed by all the previous
-                // evaluate() calls / scrolling / highlights done in the main scan above).
-                const cwvPage = await browser.newPage();
-                cwvPage.setDefaultTimeout(30000);
-                cwvPage.setDefaultNavigationTimeout(30000);
-                await cwvPage.setCacheEnabled(false);
-                await cwvPage.setViewport({ width: 1440, height: 900 });
-
-                // Set up observers BEFORE navigation to properly catch LCP, CLS, and Long Tasks (TBT)
-                // because performance.getEntriesByType doesn't work for these metric types synchronously
-                await cwvPage.evaluateOnNewDocument(() => {
-                    const cwv = { lcp: null as number | null, cls: 0, tbt: 0 };
-                    (window as any).__cwv = cwv;
-
-                    try {
-                        new PerformanceObserver((list) => {
-                            for (const entry of list.getEntries()) {
-                                cwv.lcp = entry.startTime;
-                            }
-                        }).observe({ type: 'largest-contentful-paint', buffered: true });
-                    } catch (e) { }
-
-                    try {
-                        new PerformanceObserver((list) => {
-                            for (const entry of list.getEntries() as any[]) {
-                                if (!entry.hadRecentInput) {
-                                    cwv.cls += entry.value;
-                                }
-                            }
-                        }).observe({ type: 'layout-shift', buffered: true });
-                    } catch (e) { }
-
-                    try {
-                        new PerformanceObserver((list) => {
-                            for (const entry of list.getEntries()) {
-                                if (entry.duration > 50) {
-                                    cwv.tbt += entry.duration - 50;
-                                }
-                            }
-                        }).observe({ type: 'longtask', buffered: true });
-                    } catch (e) { }
-                });
-
-                // Network and CPU throttling removed to drastically speed up scans
-                // (Previously: 4x CPU slowdown + Slow 4G)
-
-                try {
-                    await cwvPage.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
-                    try { await cwvPage.waitForNavigation({ waitUntil: "networkidle2", timeout: 5000 }); } catch { /* */ }
-                } catch {
-                    // Fallback: if it times out, proceed with whatever is loaded
-                    try { await cwvPage.waitForSelector("body", { timeout: 5000 }); } catch { /* */ }
-                }
-
-                // Extra settle time so LCP/CLS observers fire their buffered entries
-                await new Promise(r => setTimeout(r, 1000));
-
-                // Extract all CWV metrics from the injected observer data.
-                const cwvData = await cwvPage.evaluate(() => {
-                    const cwv = (window as any).__cwv || { lcp: null, cls: 0, tbt: 0 };
-                    let { lcp, cls, tbt } = cwv;
-
-                    // --- LCP fallback: Navigation Timing domContentLoadedEventEnd ---
-                    if (lcp === null) {
-                        try {
-                            const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
-                            if (navEntries.length > 0 && navEntries[0].domContentLoadedEventEnd > 0) {
-                                lcp = navEntries[0].domContentLoadedEventEnd;
-                            }
-                        } catch { /* */ }
-                    }
-
-                    // --- Final LCP fallback: loadEventEnd ---
-                    if (lcp === null) {
-                        try {
-                            const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
-                            if (navEntries.length > 0 && navEntries[0].loadEventEnd > 0) {
-                                lcp = navEntries[0].loadEventEnd;
-                            }
-                        } catch { /* */ }
-                    }
-
-                    return {
-                        lcp,
-                        cls: Math.round(cls * 1000) / 1000,
-                        tbt: Math.round(tbt),
-                    };
-                });
-
-                await cwvPage.close().catch(() => { /* ignore */ });
-
-                // LCP rating
-                const lcpMs = cwvData.lcp;
-                let lcpRating = "Unknown";
-                let lcpScore = 50;
-                if (lcpMs !== null) {
-                    if (lcpMs <= 2500) { lcpRating = "Good"; lcpScore = 100; }
-                    else if (lcpMs <= 4000) { lcpRating = "Needs Improvement"; lcpScore = 75; }
-                    else if (lcpMs <= 6000) { lcpRating = "Poor"; lcpScore = 40; }
-                    else { lcpRating = "Critical"; lcpScore = 10; }
-                }
-
-                // CLS rating
-                const clsVal = cwvData.cls ?? 0;
-                let clsRating = "Good";
-                let clsScore = 100;
-                if (clsVal > 0.25) { clsRating = "Poor"; clsScore = 20; }
-                else if (clsVal > 0.1) { clsRating = "Needs Improvement"; clsScore = 60; }
-
-                // TBT rating
-                const tbtMs = cwvData.tbt;
-                let tbtRating = "Good";
-                let tbtScore = 100;
-                if (tbtMs > 600) { tbtRating = "Poor"; tbtScore = 20; }
-                else if (tbtMs > 200) { tbtRating = "Needs Improvement"; tbtScore = 65; }
-
-                // Weighted CWV score: LCP 50%, CLS 30%, TBT 20%
-                cwvScore = Math.round(lcpScore * 0.5 + clsScore * 0.3 + tbtScore * 0.2);
-
-                const cwvIssues: string[] = [];
-                if (lcpMs !== null && lcpMs > 2500) cwvIssues.push(`LCP ${(lcpMs / 1000).toFixed(2)}s — exceeds 2.5s threshold (${lcpRating})`);
-                if (clsVal > 0.1) cwvIssues.push(`CLS ${clsVal.toFixed(3)} — exceeds 0.1 threshold (${clsRating})`);
-                if (tbtMs > 200) cwvIssues.push(`TBT ${tbtMs}ms — exceeds 200ms threshold (${tbtRating})`);
-
-                coreWebVitalsResult = {
-                    score: cwvScore,
-                    lcp: { value: lcpMs, rating: lcpRating },
-                    cls: { value: clsVal, rating: clsRating },
-                    tbt: { value: tbtMs, rating: tbtRating },
-                    issues: cwvIssues,
-                };
-            } catch (cwvErr) {
-                console.warn("[scan] Core Web Vitals error:", cwvErr);
-                // Always provide a fallback result so the CWV section is never blank
-                coreWebVitalsResult = {
-                    score: 0,
-                    lcp: { value: null, rating: "Unknown" },
-                    cls: { value: null, rating: "Unknown" },
-                    tbt: { value: null, rating: "Unknown" },
-                    issues: ["Core Web Vitals could not be measured for this page"],
-                };
+        // ===== CORE WEB VITALS (await parallel result) =====
+        // CWV was launched in parallel earlier — await its result now.
+        if (cwvPromise) {
+            const cwvResult = await cwvPromise;
+            if (cwvResult) {
+                coreWebVitalsResult = cwvResult;
+                cwvScore = cwvResult.score;
             }
         }
 

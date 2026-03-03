@@ -32,10 +32,11 @@ This file contains context, historical decisions, and bug-fix notes specifically
 - **Warning:** A TypeScript error occurred when defining the Puppeteer browser instance (`let browser: puppeteer.Browser | null = null;`) because the namespace couldn't be resolved.  
     - **Takeaway:** Always import `Browser` directly: `import puppeteer, { Browser } from "puppeteer-core";` and use `let browser: Browser | null = null;`.
 
-## 4. Overall Quality Scan Delay Optimization
+## 4. Adaptive SPA Wait (Post-Navigation Settle)
 - **Issue:** The Puppeteer evaluation started immediately after `domcontentloaded`, causing extremely dynamic applications (SPAs built with React/Vue or using lazy-loaded image components) to be captured partially rendered, skewing visual and responsive scores.
-- **Solution:** A hard wait timeout (`await new Promise(r => setTimeout(r, 8000));`) was injected closely after the `goto` navigation resolves inside `src/app/api/scan/route.ts`. 
-- **Guidance:** Do not reduce this wait buffer significantly (< 5000ms). Web analyzers require the UI to hydrate. If the URL processing is slow, it's typically a necessary trade-off for SPA accuracy.
+- **Previous Solution:** A hard 8-second wait was applied to ALL sites. This wasted time on static sites that settle instantly.
+- **Current Solution:** An adaptive wait detects SPA frameworks (React, Vue, Next.js, Angular, Svelte) via `window` globals and DOM markers. SPA sites wait `SPA_SETTLE_MS` (4s); static sites wait `STATIC_SETTLE_MS` (2s).
+- **Guidance:** SPA detection runs via `page.evaluate()` checking `window.__NEXT_DATA__`, `window.React`, `window.Vue`, `window.angular`, `document.querySelector('[ng-version]')`, etc. If a new SPA framework gains popularity, add its detection fingerprint to the `isSPA` evaluation. Do NOT reduce `SPA_SETTLE_MS` below 3s — hydration needs time.
 
 ## 5. Application Description Update
 - **Change:** The hero text in `src/app/page.tsx` was updated from *"a web analyzer tool to analyze any website..."* to *"An advanced web analyzer to validate SEO compliance, overall quality, and pixel-perfect design accuracy."* to reflect the new visual comparison capabilities comprehensively.
@@ -102,7 +103,49 @@ This file contains context, historical decisions, and bug-fix notes specifically
   - Component props should use explicit TypeScript interfaces, not bare `any`. The `any` eslint-disable is allowed only at result-level pass-through boundaries.
   - The `sectionRegistry` pattern (data-driven component rendering) should be the default approach for any feature that renders a dynamic list of similar UI blocks.
 
+## 16. Scan Pipeline Performance Optimizations
+- **Context:** The scan API (`src/app/api/scan/route.ts`) was taking 30-50s due to sequential operations. Five high-priority optimizations were applied to reduce total scan time by ~40-60%.
+- **Named Constants:** All magic numbers (timeouts, batch sizes, delays) are now extracted to named constants at the top of `route.ts` (e.g., `NAV_TIMEOUT_MS`, `SPA_SETTLE_MS`, `LINK_CHECK_BATCH_SIZE`). When tuning performance, modify ONLY these constants — never inline magic numbers.
+- **Optimizations Applied:**
+
+  1. **Adaptive SPA Wait** (see Section 4): Replaced fixed 8s delay with framework-aware 4s/2s wait. Saves 4-6s on static sites.
+
+  2. **Single-Pass Lazy-Load Scroll:** Replaced incremental scroll (50ms intervals × N steps) with a single `scrollTo(0, scrollHeight)` → wait `LAZY_SCROLL_SETTLE_MS` (800ms) → `scrollTo(0, 0)`. This triggers all IntersectionObserver entries in one jump. Saves ~2-3s on long pages.
+
+  3. **Batched Link Checking (Promise.allSettled):** Links are now checked in batches of `LINK_CHECK_BATCH_SIZE` (10) using `Promise.allSettled()` instead of a single `Promise.all()` of 30. Benefits: (a) one hung request doesn't block the entire batch, (b) avoids hammering target servers with 30 simultaneous requests, (c) results are always captured even if individual requests fail.
+
+  4. **Reduced Screenshot Delay:** Accessibility per-element screenshot delay reduced from 150ms to `SCREENSHOT_SETTLE_MS` (50ms). Total saving: ~1.2s for 12 screenshots.
+
+  5. **Parallel CWV Measurement:** The Core Web Vitals dedicated page is now launched immediately after the main page navigation settles (before SEO/heading/image checks begin). It runs concurrently with ALL other scan sections. The `cwvPromise` is awaited just before score aggregation. This hides the entire CWV navigation + measurement time (~7-8s) behind the main scan work. The dedicated page is still necessary because PerformanceObserver data gets contaminated by our evaluate()/scroll/highlight operations on the main page.
+
+- **Rules:**
+  - Never remove the dedicated CWV page — main page PerformanceObserver data is contaminated by scan operations.
+  - Always use `Promise.allSettled()` for external network calls (link checking, sitemap fetching) — never `Promise.all()` which fails-fast on any rejection.
+  - Constants are the single source of truth for timing — never hardcode timeouts in the scan body.
+
+## 17. Future Improvement Backlog
+The following improvements were identified but deferred for future implementation:
+
+### Medium Priority (Accuracy)
+- **Retry failed links with GET fallback:** Some servers reject HEAD requests but respond to GET. Retry dead links with `method: "GET"` before marking as broken.
+- **Weighted accessibility scoring:** Current formula penalizes 20 points per category regardless of severity. Weight by element count (e.g., 50 images without alt > 1 button without label).
+- **CWV throttled mode option:** Add an optional CPU/network throttling toggle for CWV to simulate real mobile conditions (was removed for speed).
+- **Structured data: microdata/RDFa support:** Currently only checks JSON-LD. Add `itemscope`/`itemprop` microdata and RDFa detection.
+
+### Lower Priority (UX & Features)
+- **Progressive result streaming:** Use Server-Sent Events (SSE) or chunked transfer to send section results as they complete, instead of waiting for the full scan.
+- **Historical scan comparison:** Store previous scan results and show score deltas (improvement/regression per section).
+- **Lighthouse integration:** Optionally run Lighthouse via Puppeteer for industry-standard performance scoring alongside custom metrics.
+- **PDF report: visual section screenshots:** Include accessibility/responsive screenshots in the PDF report (currently text-only).
+- **Sitemap URL batch scanning:** Allow scanning multiple URLs from a sitemap in sequence with aggregated scoring.
+
+### Code Quality
+- **Extract scan sections into modules:** The 2500+ line `route.ts` could be split into per-section modules (`scanSeo.ts`, `scanLinks.ts`, etc.) with a thin orchestrator.
+- **Result type safety:** Replace `any` type assertions in section components with proper typed interfaces derived from API response shapes.
+- **Unit tests for scoring functions:** Extract score calculation logic into pure functions and add test coverage.
+
 ## Workflow Reminders
 - When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file.
 - Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).
 - When adding a new section: (1) create section component in `src/components/sections/`, (2) add key to `SECTION_KEYS` in `src/types/scan.ts`, (3) add entry to `sectionRegistry` in `src/config/sectionRegistry.ts`. No changes needed in `page.tsx`.
+- When tuning scan performance, modify ONLY the named constants at the top of `route.ts`. Run a full scan after changes to verify no regressions.

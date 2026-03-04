@@ -124,7 +124,7 @@ export default function CoreWebVitalsSection({ data }: { data: any }) {
 
             {/* Weight note */}
             <p className="cwv-weight-note">
-                Score weighted: LCP 50% · CLS 30% · TBT 20%. Measured with Lighthouse simulated conditions (4x CPU slowdown, Fast 3G network) for accuracy.
+                Score weighted: LCP 50% · CLS 30% · TBT 20%. Measured via PerformanceObserver on a dedicated page.
             </p>
 
             <IssuesList issues={data.issues} />

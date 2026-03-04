@@ -123,14 +123,32 @@ This file contains context, historical decisions, and bug-fix notes specifically
   - Always use `Promise.allSettled()` for external network calls (link checking, sitemap fetching) — never `Promise.all()` which fails-fast on any rejection.
   - Constants are the single source of truth for timing — never hardcode timeouts in the scan body.
 
-## 17. Future Improvement Backlog
-The following improvements were identified but deferred for future implementation:
+## 17. Accuracy Improvements (Medium Priority — Implemented)
+Four accuracy improvements were applied to reduce false positives/negatives and improve scoring fidelity:
 
-### Medium Priority (Accuracy)
-- **Retry failed links with GET fallback:** Some servers reject HEAD requests but respond to GET. Retry dead links with `method: "GET"` before marking as broken.
-- **Weighted accessibility scoring:** Current formula penalizes 20 points per category regardless of severity. Weight by element count (e.g., 50 images without alt > 1 button without label).
-- **CWV throttled mode option:** Add an optional CPU/network throttling toggle for CWV to simulate real mobile conditions (was removed for speed).
-- **Structured data: microdata/RDFa support:** Currently only checks JSON-LD. Add `itemscope`/`itemprop` microdata and RDFa detection.
+1. **Link Checking GET Fallback:** When a HEAD request returns 400+/0, the scanner now retries with GET (`LINK_CHECK_GET_TIMEOUT_MS` = 4s). This eliminates false dead-link reports from servers that reject HEAD requests (e.g., Cloudflare WAFs, some CDNs that return 403/405 for HEAD but 200 for GET). The GET retry is per-link and only fires when HEAD fails.
+
+2. **Weighted Accessibility Scoring:** The flat `100 - categories * 20` formula was replaced with element-count-proportional scoring. Each category has a weight (`A11Y_WEIGHT_*`) and a cap (`A11Y_CAP_*`):
+   - Images without alt: up to 30pt penalty, scales 1→20 elements
+   - Links without text: up to 25pt penalty, scales 1→15 elements
+   - Buttons without label: up to 25pt penalty, scales 1→10 elements
+   - Inputs without label: up to 20pt penalty, scales 1→10 elements
+   - This means 1 image without alt = 1.5pt penalty, while 20+ = full 30pt. Previously, ANY count in a category was always 20pt.
+
+3. **CWV Throttled Mode:** Added optional `cwvThrottle` flag in `scanner.config.json`. When `true`, applies 4× CPU slowdown and simulated Fast 3G (1.6 Mbps / 750 Kbps / 150ms RTT) via Chrome DevTools Protocol on the CWV dedicated page. Default is `false` (unthrottled) for speed. Enable for Lighthouse-comparable mobile scoring.
+
+4. **Structured Data: Microdata + RDFa Detection:** The structured data section now detects three formats:
+   - **JSON-LD** (`<script type="application/ld+json">`) — existing
+   - **Microdata** (`[itemscope]` + `[itemtype]` + `[itemprop]`) — NEW
+   - **RDFa** (`[typeof]` + `[property]`) — NEW
+   - Each schema entry now includes a `source` field ("JSON-LD", "Microdata", "RDFa") shown in the UI badge. The `StructuredDataResult.schemas` interface was extended with `source: string`. The empty-state message was updated from "No JSON-LD found" to include all three formats.
+
+- **Rules:**
+  - Always retry failed link checks with GET before marking dead — never mark a link dead based on HEAD alone.
+  - Accessibility weights/caps are named constants — tune `A11Y_WEIGHT_*` and `A11Y_CAP_*` to adjust severity.
+  - When adding new structured data formats, add a `source` identifier and update both `route.ts` and `StructuredDataSection.tsx`.
+
+## 18. Future Improvement Backlog
 
 ### Lower Priority (UX & Features)
 - **Progressive result streaming:** Use Server-Sent Events (SSE) or chunked transfer to send section results as they complete, instead of waiting for the full scan.

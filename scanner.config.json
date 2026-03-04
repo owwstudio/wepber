@@ -14,5 +14,6 @@
         "coreWebVitals": true,
         "structuredData": false,
         "robots": false
-    }
+    },
+    "cwvThrottle": false
 }

@@ -78,6 +78,17 @@ const LAZY_SCROLL_SETTLE_MS = 800;   // wait after scroll-to-bottom for lazy ima
 const MAX_LINKS_TO_CHECK = 30;
 const LINK_CHECK_TIMEOUT_MS = 5_000;
 const LINK_CHECK_BATCH_SIZE = 10;    // max concurrent HEAD requests per batch
+const LINK_CHECK_GET_TIMEOUT_MS = 4_000; // GET retry timeout (shorter than HEAD)
+
+// Accessibility scoring weights (max penalty per category)
+const A11Y_WEIGHT_IMAGES = 30;       // images without alt: up to 30pts penalty
+const A11Y_WEIGHT_LINKS = 25;        // links without text: up to 25pts penalty
+const A11Y_WEIGHT_BUTTONS = 25;      // buttons without label: up to 25pts penalty
+const A11Y_WEIGHT_INPUTS = 20;       // inputs without label: up to 20pts penalty
+const A11Y_CAP_IMAGES = 20;          // cap at 20 elements for full penalty
+const A11Y_CAP_LINKS = 15;           // cap at 15 elements for full penalty
+const A11Y_CAP_BUTTONS = 10;         // cap at 10 elements for full penalty
+const A11Y_CAP_INPUTS = 10;          // cap at 10 elements for full penalty
 
 // Screenshot timing
 const SCREENSHOT_SETTLE_MS = 50;     // wait between highlight and screenshot capture
@@ -278,7 +289,7 @@ interface CoreWebVitalsResult {
 
 interface StructuredDataResult {
     score: number;
-    schemas: { type: string; valid: boolean; issues: string[]; raw: string }[];
+    schemas: { type: string; valid: boolean; issues: string[]; raw: string; source: string }[];
     totalFound: number;
     issues: string[];
 }
@@ -483,6 +494,23 @@ export async function POST(request: NextRequest) {
                     cwvPage.setDefaultNavigationTimeout(30000);
                     await cwvPage.setCacheEnabled(false);
                     await cwvPage.setViewport({ width: 1440, height: 900 });
+
+                    // Optional CPU + network throttling for realistic mobile CWV simulation.
+                    // Controlled via scanner.config.json → cwvThrottle: true
+                    if ((scannerConfig as any).cwvThrottle) {
+                        try {
+                            const cdp = await cwvPage.createCDPSession();
+                            await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+                            await cdp.send('Network.emulateNetworkConditions', {
+                                offline: false,
+                                downloadThroughput: (1.6 * 1024 * 1024) / 8,  // 1.6 Mbps
+                                uploadThroughput: (750 * 1024) / 8,             // 750 Kbps
+                                latency: 150,                                   // 150ms RTT
+                            });
+                        } catch (throttleErr) {
+                            console.warn("[scan] CWV throttling failed (CDP):", throttleErr);
+                        }
+                    }
 
                     // Set up observers BEFORE navigation to catch LCP, CLS, Long Tasks
                     await cwvPage.evaluateOnNewDocument(() => {
@@ -929,6 +957,7 @@ export async function POST(request: NextRequest) {
             // Batched link checking with Promise.allSettled for resilience.
             // Batches of LINK_CHECK_BATCH_SIZE prevent hammering target servers
             // and allSettled ensures one hung request doesn't block the rest.
+            // If HEAD fails, retry with GET — some servers reject HEAD but respond to GET.
             for (let i = 0; i < linksToCheck.length; i += LINK_CHECK_BATCH_SIZE) {
                 const batch = linksToCheck.slice(i, i + LINK_CHECK_BATCH_SIZE);
                 await Promise.allSettled(
@@ -940,9 +969,20 @@ export async function POST(request: NextRequest) {
                                 signal: AbortSignal.timeout(LINK_CHECK_TIMEOUT_MS),
                                 headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOChecker/1.0)" },
                             }).catch(() => null);
-                            const status = headRes ? headRes.status : 0;
-                            if (status >= 400 || status === 0) {
-                                deadLinks.push({ url: link.substring(0, 200), status });
+                            const headStatus = headRes ? headRes.status : 0;
+                            if (headStatus >= 400 || headStatus === 0) {
+                                // Retry with GET — some servers (e.g. Cloudflare, WAFs)
+                                // reject HEAD requests with 403/405 but respond fine to GET
+                                const getRes = await fetch(link, {
+                                    method: "GET",
+                                    redirect: "follow",
+                                    signal: AbortSignal.timeout(LINK_CHECK_GET_TIMEOUT_MS),
+                                    headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOChecker/1.0)" },
+                                }).catch(() => null);
+                                const getStatus = getRes ? getRes.status : 0;
+                                if (getStatus >= 400 || getStatus === 0) {
+                                    deadLinks.push({ url: link.substring(0, 200), status: getStatus || headStatus });
+                                }
                             }
                         } catch {
                             deadLinks.push({ url: link.substring(0, 200), status: 0 });
@@ -1631,7 +1671,19 @@ export async function POST(request: NextRequest) {
             if (a11yData.btnsNoLabel > 0) a11yIssues.push(`${a11yData.btnsNoLabel} button(s) without labels`);
             if (a11yData.inputsNoLabel > 0) a11yIssues.push(`${a11yData.inputsNoLabel} form input(s) without labels`);
 
-            a11yScore = Math.max(0, 100 - a11yIssues.length * 20);
+            // Weighted accessibility scoring: penalty scales with element count per category.
+            // 1 image without alt = small penalty; 20 images without alt = full category penalty.
+            // Each category has a max weight and a cap — beyond the cap, penalty is maxed out.
+            const totalA11yElements = a11yData.imgsNoAlt + a11yData.linksNoText + a11yData.btnsNoLabel + a11yData.inputsNoLabel;
+            if (totalA11yElements === 0) {
+                a11yScore = 100;
+            } else {
+                const imgPenalty = a11yData.imgsNoAlt > 0 ? (Math.min(a11yData.imgsNoAlt, A11Y_CAP_IMAGES) / A11Y_CAP_IMAGES) * A11Y_WEIGHT_IMAGES : 0;
+                const linkPenalty = a11yData.linksNoText > 0 ? (Math.min(a11yData.linksNoText, A11Y_CAP_LINKS) / A11Y_CAP_LINKS) * A11Y_WEIGHT_LINKS : 0;
+                const btnPenalty = a11yData.btnsNoLabel > 0 ? (Math.min(a11yData.btnsNoLabel, A11Y_CAP_BUTTONS) / A11Y_CAP_BUTTONS) * A11Y_WEIGHT_BUTTONS : 0;
+                const inputPenalty = a11yData.inputsNoLabel > 0 ? (Math.min(a11yData.inputsNoLabel, A11Y_CAP_INPUTS) / A11Y_CAP_INPUTS) * A11Y_WEIGHT_INPUTS : 0;
+                a11yScore = Math.max(0, Math.round(100 - imgPenalty - linkPenalty - btnPenalty - inputPenalty));
+            }
 
             // Capture per-category accessibility screenshots
             const a11yScreenshots: { label: string; image: string }[] = [];
@@ -2408,7 +2460,7 @@ export async function POST(request: NextRequest) {
                     return scripts.map(s => (s.textContent || "").trim()).filter(Boolean);
                 });
 
-                const schemas: { type: string; valid: boolean; issues: string[]; raw: string }[] = [];
+                const schemas: { type: string; valid: boolean; issues: string[]; raw: string; source: string }[] = [];
                 const REQUIRED_FIELDS: Record<string, string[]> = {
                     Article: ["headline", "author", "datePublished"],
                     Product: ["name", "offers"],
@@ -2437,7 +2489,7 @@ export async function POST(request: NextRequest) {
                                 for (const field of required) {
                                     if (!obj[field]) issues.push(`Missing required field: ${field}`);
                                 }
-                                schemas.push({ type: t, valid: issues.length === 0, issues, raw: raw.substring(0, 500) });
+                                schemas.push({ type: t, valid: issues.length === 0, issues, raw: raw.substring(0, 500), source: "JSON-LD" });
                             }
                             // Recurse into @graph
                             if (Array.isArray(obj["@graph"])) {
@@ -2447,14 +2499,70 @@ export async function POST(request: NextRequest) {
                         if (Array.isArray(parsed)) { for (const item of parsed) processSchema(item); }
                         else processSchema(parsed);
                     } catch {
-                        schemas.push({ type: "Unknown", valid: false, issues: ["Invalid JSON"], raw: raw.substring(0, 200) });
+                        schemas.push({ type: "Unknown", valid: false, issues: ["Invalid JSON"], raw: raw.substring(0, 200), source: "JSON-LD" });
                     }
+                }
+
+                // Microdata detection (itemscope/itemtype/itemprop)
+                const microdataSchemas = await page.evaluate(() => {
+                    const results: { type: string; properties: string[]; html: string }[] = [];
+                    document.querySelectorAll('[itemscope]').forEach(el => {
+                        const rawType = el.getAttribute('itemtype') || 'Unknown';
+                        const type = rawType.replace(/https?:\/\/schema\.org\//i, '');
+                        const props: string[] = [];
+                        el.querySelectorAll('[itemprop]').forEach(prop => {
+                            const name = prop.getAttribute('itemprop');
+                            if (name && !props.includes(name)) props.push(name);
+                        });
+                        results.push({ type, properties: props.slice(0, 20), html: el.outerHTML.substring(0, 300) });
+                    });
+                    return results.slice(0, 10);
+                });
+
+                for (const md of microdataSchemas) {
+                    const issues: string[] = [];
+                    const required = REQUIRED_FIELDS[md.type] || [];
+                    for (const field of required) {
+                        if (!md.properties.includes(field)) issues.push(`Missing itemprop: ${field}`);
+                    }
+                    schemas.push({
+                        type: md.type,
+                        valid: issues.length === 0,
+                        issues,
+                        raw: md.html,
+                        source: "Microdata",
+                    });
+                }
+
+                // RDFa detection (typeof/property/vocab)
+                const rdfaSchemas = await page.evaluate(() => {
+                    const results: { type: string; properties: string[]; html: string }[] = [];
+                    document.querySelectorAll('[typeof]').forEach(el => {
+                        const type = el.getAttribute('typeof') || 'Unknown';
+                        const props: string[] = [];
+                        el.querySelectorAll('[property]').forEach(prop => {
+                            const name = prop.getAttribute('property');
+                            if (name && !props.includes(name)) props.push(name);
+                        });
+                        results.push({ type, properties: props.slice(0, 20), html: el.outerHTML.substring(0, 300) });
+                    });
+                    return results.slice(0, 10);
+                });
+
+                for (const rd of rdfaSchemas) {
+                    schemas.push({
+                        type: rd.type,
+                        valid: true, // RDFa validation is less strict
+                        issues: [],
+                        raw: rd.html,
+                        source: "RDFa",
+                    });
                 }
 
                 const sdIssues: string[] = [];
                 if (schemas.length === 0) {
                     sdScore = 30;
-                    sdIssues.push("No structured data (JSON-LD / Schema.org) found");
+                    sdIssues.push("No structured data (JSON-LD, Microdata, or RDFa) found");
                 } else {
                     const invalid = schemas.filter(s => !s.valid);
                     if (invalid.length > 0) {

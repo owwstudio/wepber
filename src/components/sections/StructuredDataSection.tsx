@@ -28,6 +28,9 @@ function SchemaCard({ schema }: { schema: any }) {
                 <div className="sd-schema-card__title">
                     <span className="sd-schema-card__emoji">{icon}</span>
                     <span className="sd-schema-card__type">{schema.type}</span>
+                    {schema.source && (
+                        <span className="badge badge-info badge--xs">{schema.source}</span>
+                    )}
                     {schema.valid
                         ? <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
                         : <XCircle size={14} style={{ color: "var(--danger)" }} />
@@ -56,7 +59,7 @@ function SchemaCard({ schema }: { schema: any }) {
                     )}
                     <div className="sd-raw-label">
                         <Code2 size={12} style={{ color: "var(--text-muted)" }} />
-                        Raw JSON-LD (truncated)
+                        Raw {schema.source || "JSON-LD"} (truncated)
                     </div>
                     <pre className="sd-raw-json">{schema.raw}</pre>
                 </div>
@@ -101,7 +104,7 @@ export default function StructuredDataSection({ data }: { data: any }) {
             {data.totalFound === 0 ? (
                 <div className="sd-empty">
                     <Code2 size={32} style={{ color: "var(--text-muted)", marginBottom: 8 }} />
-                    <p style={{ color: "var(--text-muted)", margin: 0 }}>No JSON-LD / Schema.org structured data found</p>
+                    <p style={{ color: "var(--text-muted)", margin: 0 }}>No structured data found (JSON-LD, Microdata, or RDFa)</p>
                     <p className="sd-empty__hint">
                         Add structured data to help Google understand your content and unlock rich results in search.
                         Common types: Article, Product, FAQPage, BreadcrumbList, Organization.

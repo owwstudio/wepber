@@ -4,16 +4,16 @@
         "headings": true,
         "images": true,
         "links": true,
-        "visual": false,
+        "visual": true,
         "performance": true,
-        "security": false,
+        "security": true,
         "accessibility": true,
         "responsive": true,
-        "techStack": false,
+        "techStack": true,
         "sitemap": true,
         "coreWebVitals": true,
-        "structuredData": false,
-        "robots": false
+        "structuredData": true,
+        "robots": true
     },
-    "cwvThrottle": false
+    "cwvThrottle": true
 }

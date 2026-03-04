@@ -8,10 +8,16 @@ import { activeScanMessages, compareMessages } from "@/config/scanMessages";
  * Custom hook encapsulating all scan execution logic.
  *
  * Manages URL state, loading indicators, progress message rotation,
- * elapsed timer, and the AbortController-based client timeout.
+ * elapsed timer, SSE streaming, and the AbortController-based client timeout.
+ *
+ * In scan mode (no designImage), uses SSE streaming to progressively
+ * deliver section results as they complete. In compare mode, uses
+ * traditional JSON response.
  *
  * @param designImage – current design image data URL (or null).
  *   When non-null the hook hits `/api/compare`; otherwise `/api/scan`.
+ *
+ * @see agent.md §19 — Progressive Result Streaming
  */
 export function useScan(designImage: string | null) {
   const [url, setUrl] = useState("");
@@ -20,6 +26,8 @@ export function useScan(designImage: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState(0);
   const [elapsed, setElapsed] = useState(0);
+  const [streaming, setStreaming] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
 
   const handleScan = useCallback(
     async (scanUrl?: string) => {
@@ -32,6 +40,8 @@ export function useScan(designImage: string | null) {
       setError(null);
       setScanMsg(0);
       setElapsed(0);
+      setStreaming(false);
+      setStreamStatus(null);
 
       // Rotate scan progress messages based on the current mode
       const msgInterval = setInterval(() => {
@@ -51,21 +61,90 @@ export function useScan(designImage: string | null) {
       const clientTimeout = setTimeout(() => controller.abort(), 120_000);
 
       try {
-        const endpoint = designImage ? "/api/compare" : "/api/scan";
-        const payload = designImage
-          ? { url: targetUrl, designImage }
-          : { url: targetUrl };
+        if (designImage) {
+          // ===== COMPARE MODE — traditional JSON response =====
+          const res = await fetch("/api/compare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: targetUrl, designImage }),
+            signal: controller.signal,
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Scan failed");
+          setResult(data);
+        } else {
+          // ===== SCAN MODE — SSE streaming =====
+          const res = await fetch("/api/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: targetUrl }),
+            signal: controller.signal,
+          });
 
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({ error: "Scan failed" }));
+            throw new Error(data.error || "Scan failed");
+          }
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Scan failed");
-        setResult(data);
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let partialResult: ScanResult = { url: targetUrl };
+          let receivedFirstSection = false;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Parse SSE events from buffer (split by double newline)
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() || "";
+
+            for (const part of parts) {
+              const line = part.trim();
+              if (!line.startsWith("data: ")) continue;
+
+              try {
+                const event = JSON.parse(line.slice(6));
+
+                if (event.type === "status") {
+                  setStreamStatus(event.message);
+                } else if (event.type === "section") {
+                  // Section data arrived — add to partial result
+                  partialResult = { ...partialResult, [event.key]: event.data };
+                  if (!receivedFirstSection) {
+                    receivedFirstSection = true;
+                    setStreaming(true);
+                  }
+                  setResult({ ...partialResult });
+                } else if (event.type === "screenshot") {
+                  partialResult = { ...partialResult, screenshot: event.data };
+                  setResult({ ...partialResult });
+                } else if (event.type === "complete") {
+                  // Final event — merge metadata into result
+                  partialResult = {
+                    ...partialResult,
+                    url: event.url,
+                    scanDate: event.scanDate,
+                    overallScore: event.overallScore,
+                  };
+                  setResult({ ...partialResult });
+                  setStreaming(false);
+                } else if (event.type === "error") {
+                  throw new Error(event.message || "Scan failed");
+                }
+              } catch (parseErr) {
+                // If it's a rethrown error from the handler, propagate it
+                if (parseErr instanceof Error && parseErr.message !== "Unexpected end of JSON input") {
+                  throw parseErr;
+                }
+                // Otherwise ignore malformed SSE chunk
+              }
+            }
+          }
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           setError(
@@ -81,6 +160,8 @@ export function useScan(designImage: string | null) {
         clearInterval(elapsedInterval);
         clearTimeout(clientTimeout);
         setLoading(false);
+        setStreaming(false);
+        setStreamStatus(null);
       }
     },
     [url, designImage]
@@ -94,6 +175,8 @@ export function useScan(designImage: string | null) {
     error,
     scanMsg,
     elapsed,
+    streaming,
+    streamStatus,
     handleScan,
   };
 }

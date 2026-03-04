@@ -317,52 +317,67 @@ export async function POST(request: NextRequest) {
         console.error("Failed to load scanner.config.json", e);
     }
 
+    // ===== EARLY VALIDATION (before stream) =====
+    const ip =
+        request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+        request.headers.get("x-real-ip") ||
+        "unknown";
+    const { allowed, retryAfter } = checkRateLimit(ip);
+    if (!allowed) {
+        return NextResponse.json(
+            { error: `Rate limit exceeded. Try again in ${retryAfter}s.` },
+            { status: 429, headers: { "Retry-After": String(retryAfter) } }
+        );
+    }
+
+    let body: Record<string, unknown>;
+    try {
+        body = await request.json();
+    } catch {
+        return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    const { url } = body;
+    if (!url || typeof url !== "string") {
+        return NextResponse.json({ error: "URL is required" }, { status: 400 });
+    }
+    if ((url as string).length > 2048) {
+        return NextResponse.json({ error: "URL too long (max 2048 characters)" }, { status: 400 });
+    }
+
+    let targetUrl: string;
+    try {
+        const normalized = (url as string).trim().startsWith("http") ? (url as string).trim() : `https://${(url as string).trim()}`;
+        const parsed = new URL(normalized);
+        const safety = isSafeUrl(parsed);
+        if (!safety.safe) {
+            return NextResponse.json({ error: safety.reason }, { status: 400 });
+        }
+        targetUrl = parsed.href;
+    } catch {
+        return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
+    }
+
+    // ===== STREAMING RESPONSE =====
+    // Uses Server-Sent Events to progressively deliver section results
+    // as they complete, instead of waiting for the entire scan to finish.
+    const sseEncoder = new TextEncoder();
+    const scanConfig = scannerConfig; // capture for closure
+    const scanTargetUrl = targetUrl;  // capture for closure
+
+    const stream = new ReadableStream({
+        async start(controller) {
+            const emit = (type: string, payload: Record<string, unknown>) => {
+                try {
+                    controller.enqueue(sseEncoder.encode(`data: ${JSON.stringify({ type, ...payload })}\n\n`));
+                } catch { /* stream may be closed */ }
+            };
+
     let browser;
     try {
-        // ===== RATE LIMITING =====
-        const ip =
-            request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-            request.headers.get("x-real-ip") ||
-            "unknown";
-        const { allowed, retryAfter } = checkRateLimit(ip);
-        if (!allowed) {
-            return NextResponse.json(
-                { error: `Rate limit exceeded. Try again in ${retryAfter}s.` },
-                { status: 429, headers: { "Retry-After": String(retryAfter) } }
-            );
-        }
-
-        // ===== REQUEST BODY VALIDATION =====
-        let body: Record<string, unknown>;
-        try {
-            body = await request.json();
-        } catch {
-            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-        }
-
-        const { url } = body;
-        if (!url || typeof url !== "string") {
-            return NextResponse.json({ error: "URL is required" }, { status: 400 });
-        }
-        if (url.length > 2048) {
-            return NextResponse.json({ error: "URL too long (max 2048 characters)" }, { status: 400 });
-        }
-
-        // ===== URL VALIDATION + SSRF PROTECTION =====
-        let targetUrl: string;
-        try {
-            const normalized = url.trim().startsWith("http") ? url.trim() : `https://${url.trim()}`;
-            const parsed = new URL(normalized);
-
-            const safety = isSafeUrl(parsed);
-            if (!safety.safe) {
-                return NextResponse.json({ error: safety.reason }, { status: 400 });
-            }
-
-            targetUrl = parsed.href;
-        } catch {
-            return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
-        }
+        emit("status", { message: "Launching browser engine..." });
+        const targetUrl = scanTargetUrl;
+        const scannerConfig = scanConfig;
 
         // ===== PUPPETEER LAUNCH (hardened) =====
         // On Vercel: use @sparticuz/chromium-min + remote pack to bypass 50MB limit
@@ -478,6 +493,8 @@ export async function POST(request: NextRequest) {
             );
         });
         await new Promise(r => setTimeout(r, isSPA ? SPA_SETTLE_MS : STATIC_SETTLE_MS));
+
+        emit("status", { message: "Page loaded. Starting analysis..." });
 
         // ===== CORE WEB VITALS (started in parallel) =====
         // Launch CWV measurement on a dedicated page NOW so it runs concurrently
@@ -766,7 +783,7 @@ export async function POST(request: NextRequest) {
                 viewport: seo.viewport,
                 issues: seoIssues,
             };
-
+            emit("section", { key: "seo", data: seoResult });
 
         }
 
@@ -807,7 +824,7 @@ export async function POST(request: NextRequest) {
                 h1Count,
                 issues: headingIssues,
             };
-
+            emit("section", { key: "headings", data: headingResult });
 
         }
 
@@ -904,7 +921,7 @@ export async function POST(request: NextRequest) {
                 issues: imageIssues,
                 screenshots: imageScreenshots,
             };
-
+            emit("section", { key: "images", data: imageResult });
 
         }
 
@@ -1023,7 +1040,7 @@ export async function POST(request: NextRequest) {
                     buttonsNoLabel: linkData.buttonsNoLabelDetails,
                 },
             };
-
+            emit("section", { key: "links", data: linkResult });
 
         }
 
@@ -1189,7 +1206,7 @@ export async function POST(request: NextRequest) {
                 backgroundColors: visualData.backgroundColors.slice(0, 20),
                 issues: visualIssues,
             };
-
+            emit("section", { key: "visual", data: visualResult });
 
         }
 
@@ -1492,7 +1509,7 @@ export async function POST(request: NextRequest) {
                 recommendations,
                 issues: perfIssues,
             };
-
+            emit("section", { key: "performance", data: performanceResult });
 
         }
 
@@ -1738,7 +1755,7 @@ export async function POST(request: NextRequest) {
                     categoryScreenshots: a11yCategoryScreenshots,
                 } as any,
             };
-
+            emit("section", { key: "accessibility", data: accessibilityResult });
 
         }
 
@@ -1896,6 +1913,7 @@ export async function POST(request: NextRequest) {
             } catch (err) {
                 console.warn("[scan] Fatal error in responsive check:", err);
             }
+            if (responsiveResult) emit("section", { key: "responsive", data: responsiveResult });
         } // End responsive feature
 
         // ===== SECURITY STANDARDS =====
@@ -2021,7 +2039,7 @@ export async function POST(request: NextRequest) {
                 issues: securityIssues,
                 recommendations: securityRecs,
             };
-
+            emit("section", { key: "security", data: securityResult });
 
         }
 
@@ -2350,7 +2368,7 @@ export async function POST(request: NextRequest) {
                 serverInfo: techServerInfo,
                 totalDetected: techPageData.length + langItems.length,
             };
-
+            emit("section", { key: "techStack", data: techStackResult });
 
         }
 
@@ -2438,7 +2456,7 @@ export async function POST(request: NextRequest) {
             } catch (e) {
                 sitemapResult.error = e instanceof Error ? e.message : 'Failed to fetch sitemap';
             }
-
+            emit("section", { key: "sitemap", data: sitemapResult });
 
         }
 
@@ -2449,6 +2467,7 @@ export async function POST(request: NextRequest) {
             if (cwvResult) {
                 coreWebVitalsResult = cwvResult;
                 cwvScore = cwvResult.score;
+                emit("section", { key: "coreWebVitals", data: coreWebVitalsResult });
             }
         }
 
@@ -2582,6 +2601,7 @@ export async function POST(request: NextRequest) {
             } catch (sdErr) {
                 console.warn("[scan] Structured data error:", sdErr);
             }
+            if (structuredDataResult) emit("section", { key: "structuredData", data: structuredDataResult });
         }
 
         // ===== ROBOTS.TXT CHECK =====
@@ -2652,8 +2672,8 @@ export async function POST(request: NextRequest) {
             } catch (robotsErr) {
                 console.warn("[scan] Robots.txt error:", robotsErr);
             }
+            if (robotsResult) emit("section", { key: "robots", data: robotsResult });
         }
-
 
         let totalWeight = 0;
         let earnedWeight = 0;
@@ -2671,36 +2691,36 @@ export async function POST(request: NextRequest) {
 
         const overallScore = totalWeight > 0 ? Math.round(earnedWeight / totalWeight) : 0;
 
-        const result: ScanResult = {
+        const scanDate = new Date().toISOString();
+
+        // Emit screenshot and techStack as separate events (non-section data)
+        if (fullScreenshot) emit("screenshot", { data: fullScreenshot });
+
+        // Emit the complete event with overall result metadata
+        emit("complete", {
             url: targetUrl,
-            scanDate: new Date().toISOString(),
+            scanDate,
             overallScore,
-            screenshot: fullScreenshot,
-            seo: seoResult,
-            headings: headingResult,
-            images: imageResult,
-            links: linkResult,
-            visual: visualResult,
-            performance: performanceResult,
-            accessibility: accessibilityResult,
-            responsive: responsiveResult,
-            security: securityResult,
-            techStack: techStackResult,
-            coreWebVitals: coreWebVitalsResult,
-            structuredData: structuredDataResult,
-            robots: robotsResult,
-            sitemap: sitemapResult,
-        };
+        });
 
         await browser.close();
-        return NextResponse.json(result);
+        controller.close();
     } catch (error) {
         if (browser) await browser.close().catch(() => { });
         // Log full error server-side only — never expose internals to client
         console.error("[scan] Error:", error instanceof Error ? error.message : error);
-        return NextResponse.json(
-            { error: "Scan failed. Please check the URL and try again." },
-            { status: 500 }
-        );
+        emit("error", { message: "Scan failed. Please check the URL and try again." });
+        controller.close();
     }
+        } // end start()
+    }); // end ReadableStream
+
+    return new Response(stream, {
+        headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-store",
+            "Connection": "keep-alive",
+            "X-Content-Type-Options": "nosniff",
+        },
+    });
 }

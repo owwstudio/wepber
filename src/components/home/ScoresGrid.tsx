@@ -8,6 +8,7 @@ import type { SectionKey } from "@/types/scan";
 
 interface ScoresGridProps {
   result: any;
+  sectionDeltas?: Partial<Record<SectionKey, number>>;
   onScrollToSection: (key: SectionKey) => void;
 }
 
@@ -15,12 +16,14 @@ interface ScoresGridProps {
  * Mini scores grid — data-driven via sectionRegistry.
  *
  * Iterates registered sections that have `showMiniScore: true` and
- * exist in the result payload.
+ * exist in the result payload. Shows score deltas when available.
  *
- * @see agent.md §9 — Dynamic Component Configuration
+ * @see agent.md §9  — Dynamic Component Configuration
+ * @see agent.md §18 — Historical Scan Comparison
  */
 export default function ScoresGrid({
   result,
+  sectionDeltas,
   onScrollToSection,
 }: ScoresGridProps) {
   return (
@@ -33,6 +36,7 @@ export default function ScoresGrid({
             score={result[entry.key].score}
             label={entry.label}
             icon={entry.icon}
+            delta={sectionDeltas?.[entry.key]}
             onClick={() => onScrollToSection(entry.key)}
           />
         ))}

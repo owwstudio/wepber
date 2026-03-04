@@ -1,5 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { getScoreClass, getScoreColor } from "@/utils/score";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -8,11 +9,13 @@ export default function MiniScore({
     score,
     label,
     icon: Icon,
+    delta,
     onClick,
 }: {
     score: number;
     label: string;
     icon: any;
+    delta?: number | null;
     onClick?: () => void;
 }) {
     const cls = getScoreClass(score);
@@ -26,8 +29,19 @@ export default function MiniScore({
             <Icon size={28} style={{ color: getScoreColor(score) }} />
             <div className="mini-score__body">
                 <div className="mini-score__label">{label}</div>
-                <div className={`mini-score__value score-${cls}`}>
-                    {score}
+                <div className="mini-score__value-row">
+                    <div className={`mini-score__value score-${cls}`}>
+                        {score}
+                    </div>
+                    {delta !== undefined && delta !== null && delta !== 0 && (
+                        <span
+                            className={`mini-score__delta ${delta > 0 ? "mini-score__delta--positive" : "mini-score__delta--negative"}`}
+                        >
+                            {delta > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                            {delta > 0 ? "+" : ""}
+                            {delta}
+                        </span>
+                    )}
                 </div>
             </div>
         </motion.div>

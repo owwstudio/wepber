@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, Layers } from "lucide-react";
 
 import { useScan } from "@/hooks/useScan";
 import { useDesignImage } from "@/hooks/useDesignImage";
 import { useSections } from "@/hooks/useSections";
+import { useScanHistory } from "@/hooks/useScanHistory";
 import { downloadPDF } from "@/utils/downloadPDF";
 
 import {
@@ -17,6 +18,7 @@ import {
   CompareResult,
   ScoresGrid,
   SectionsGrid,
+  RecentScans,
 } from "@/components/home";
 import TechStackSection from "@/components/sections/TechStackSection";
 
@@ -24,15 +26,38 @@ import TechStackSection from "@/components/sections/TechStackSection";
 
 export default function HomePage() {
   const { designImage, handleImageUpload, clearImage } = useDesignImage();
-  const { url, setUrl, loading, result, error, scanMsg, elapsed, handleScan } =
-    useScan(designImage);
+  const {
+    url,
+    setUrl,
+    loading,
+    result,
+    error,
+    scanMsg,
+    elapsed,
+    streaming,
+    handleScan,
+  } = useScan(designImage);
   const { openSections, sectionRefs, scrollToSection, handleSectionOpenChange } =
     useSections();
+  const { history, addEntry, getScoreDeltas, clearHistory } = useScanHistory();
 
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
 
+  // Save completed scan results to history
+  useEffect(() => {
+    if (result && result.overallScore !== undefined && !streaming) {
+      addEntry(result);
+    }
+  }, [result, streaming, addEntry]);
+
+  // Compute score deltas for the current result
+  const deltas = result?.url ? getScoreDeltas(result.url) : null;
+
   const handleDownloadPDF = () => downloadPDF(result, url, setIsExporting);
+
+  // Whether to show loading state (only when no partial results yet)
+  const showLoading = loading && !result;
 
   return (
     <div className="page">
@@ -67,9 +92,21 @@ export default function HomePage() {
           onScan={() => handleScan()}
         />
 
-        {/* Loading State */}
+        {/* Recent Scans — shown when idle (no result, not loading) */}
+        {!loading && !result && !error && (
+          <RecentScans
+            history={history}
+            onScanUrl={(u: string) => {
+              setUrl(u);
+              handleScan(u);
+            }}
+            onClear={clearHistory}
+          />
+        )}
+
+        {/* Loading State — only shown before first section arrives */}
         <AnimatePresence>
-          {loading && (
+          {showLoading && (
             <LoadingState
               elapsed={elapsed}
               scanMsg={scanMsg}
@@ -83,7 +120,7 @@ export default function HomePage() {
           {error && <ErrorState error={error} onRetry={() => handleScan()} />}
         </AnimatePresence>
 
-        {/* Results */}
+        {/* Results — appears as soon as first section streams in */}
         <AnimatePresence>
           {result && (
             <motion.div
@@ -98,6 +135,8 @@ export default function HomePage() {
                 <ScanScoreCard
                   result={result}
                   isExporting={isExporting}
+                  overallDelta={deltas?.overall}
+                  isStreaming={streaming}
                   onDownloadPDF={handleDownloadPDF}
                 />
               )}
@@ -116,6 +155,7 @@ export default function HomePage() {
               {!result.diffImage && (
                 <ScoresGrid
                   result={result}
+                  sectionDeltas={deltas?.sections}
                   onScrollToSection={scrollToSection}
                 />
               )}
@@ -176,9 +216,11 @@ export default function HomePage() {
               />
 
               {/* Footer */}
-              <div className="page__footer">
-                COAXA — Powered by One Week Wonders
-              </div>
+              {!streaming && (
+                <div className="page__footer">
+                  COAXA — Powered by One Week Wonders
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

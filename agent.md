@@ -206,6 +206,59 @@ Four accuracy improvements were applied to reduce false positives/negatives and 
 - **Architecture:** `sectionDetails` map in `downloadPDF.ts` — each key maps to a writer function that extracts and formats section-specific data. Generic fallback shows issue count for sections without a dedicated writer.
 - **Rule:** PDF export MUST remain text-based (jsPDF text-mapping). Do NOT use html2canvas or visual snapshotting. See §10.
 
+## 22. Medium-Priority UX Improvements (Implemented)
+
+### 22a. Language Fix — Indonesian → English
+Replaced 15 Indonesian text remnants across 4 component files and `route.ts`:
+- `ImagesSection.tsx`: `"(tidak ada)"` → `"(none)"`, "Menampilkan" → "Showing", "Tidak ada gambar" → "No images"
+- `LinksSection.tsx`, `AccessibilitySection.tsx`: "Menampilkan" / "Tidak ada item" → English equivalents
+- `ScreenshotGallery.tsx`: "Klik untuk memperbesar" → "Click to enlarge"
+- `route.ts` (7 screenshot labels): "tanpa alt text", "gambar broken", "button tanpa label", etc. → English
+
+### 22b. Enhanced Error States
+- **`src/types/scan.ts`** — Added `ScanError` interface: `{ type: "network" | "timeout" | "invalid-url" | "unreachable" | "server" | "unknown"; message: string }`
+- **`src/hooks/useScan.ts`** — `error` state changed from `string | null` to `ScanError | null`; errors classified by AbortError name, TypeError instance, HTTP status, and message keywords
+- **`src/components/home/ErrorState.tsx`** — Accepts `ScanError`; renders per-type icon (WifiOff/Clock/Link2/Globe/ServerCrash/XCircle), title, and `suggestion` text
+- **`src/styles/page.css`** — Added `.error-card__suggestion` class
+- **Rule:** Error classification runs in both SSE HTTP error path (`!res.ok`) and the catch block. Never show raw error messages without classification.
+
+### 22c. WelcomeState Component (Empty State)
+- **`src/components/home/WelcomeState.tsx`** — Shown when `!loading && !result && !error`. Contains feature pills (SEO Meta, Performance, Security, Images, Core Web Vitals, Accessibility), subtitle, and example URL quick-scan buttons (stripe.com, github.com, vercel.com).
+- Barrel-exported via `src/components/home/index.ts`.
+- **Hydration fix:** Both `motion.div` elements use `initial={false}` (not `initial={{ opacity: 0 }}`). framer-motion v12 + React 19 SSR serializes inline `style` attributes during SSR from `initial` props — using `initial={false}` skips the mount animation and prevents the server/client style mismatch.
+- **Rule:** Any new component that renders on initial page load (before a scan) and uses framer-motion MUST use `initial={false}` to avoid React 19 hydration errors.
+
+### 22d. CopyButton Component
+- **`src/components/ui/CopyButton.tsx`** — Reusable clipboard button. Uses `navigator.clipboard.writeText`, swaps Copy→Check icon for 2s, calls `e.stopPropagation()` to prevent parent click handlers.
+- **`src/styles/components.css`** — `.copy-btn`, `.copy-btn--copied` classes with smooth color transition.
+- Integrated into 6 section components: `ImagesSection` (src URL), `LinksSection` (href + HTML), `AccessibilitySection` (code blocks), `SitemapSection` (path), `StructuredDataSection` (raw JSON-LD), `SecuritySection` (header values).
+- **Rule:** Always call `e.stopPropagation()` in CopyButton's click handler — many parent containers have their own click handlers (e.g., collapsible sections).
+
+### 22e. SectionSkeleton Loader
+- **`src/components/ui/SectionSkeleton.tsx`** — Renders N skeleton cards (shimmer icon + title + 3 lines) using existing `.skeleton` class from `globals.css`. Shown during `showLoading` state alongside `LoadingState`.
+- **`src/styles/components.css`** — `.section-skeleton__*` BEM classes.
+- **Rule:** `SectionSkeleton` is shown only when `showLoading` is true (= `loading && !result`). Once the first SSE section arrives (`result` exists), `showLoading` becomes false and skeletons disappear, replaced by real section cards.
+
+### 22f. Entrance Animations
+- **`MiniScore.tsx`** — `animationDelay?: number` prop; stagger via `initial={{ opacity: 0, y: 16, scale: 0.95 }}` / `animate={{ opacity: 1, y: 0, scale: 1 }}` with `transition.delay`.
+- **`ScoresGrid.tsx`** — Passes `animationDelay={index * 0.05}` to each MiniScore.
+- **`CollapsibleSection.tsx`** — `animationDelay?: number` prop added to transition.
+- **`SectionsGrid.tsx`** — Passes `animationDelay={index * 0.04}` to each CollapsibleSection.
+- **`ScoreRing.tsx`** — `AnimatedCounter` component using `useMotionValue` + `useTransform` + `animate` from framer-motion: counts 0→score over 1.5s easeOut, synchronized with the ring stroke animation.
+- **Rule:** Stagger delays are intentionally small (40–50ms per item). Larger delays feel sluggish on pages with many sections.
+
+### 22g. Mobile Responsive Overhaul
+Two breakpoints added across all CSS files:
+- **Tablet `≤ 1024px`:** results-grid 1-col, compare-card 2-col grid, reduced padding/font sizes
+- **Mobile `≤ 640px`:** search form stacks vertically, scores-grid 2-col, compare-grid 1-col, section headers compact, list detail rows stack, CWV grid 1-col, SEO items stack, security header rows stack, welcome-state compact, table font shrink, glass-card radius 12px
+- Files modified: `globals.css`, `page.css`, `components.css`, `lists.css`, `sections.css`
+- **Rule:** All breakpoints use `max-width` (mobile-first override approach). Never use `min-width` breakpoints — the existing codebase uses max-width exclusively.
+
+### 22h. Hydration Fix — useScanHistory localStorage
+- **Problem:** `useState(loadHistory)` called `loadHistory` during hydration, returning localStorage data on the client while the server rendered with `[]`. React 19 detected the `RecentScans` vs `WelcomeState` DOM mismatch.
+- **Fix (`src/hooks/useScanHistory.ts`):** Changed to `useState<ScanHistoryEntry[]>([])` + `useEffect(() => setHistory(loadHistory()), [])`. Both server and client start with `[]`; localStorage is loaded after mount.
+- **Rule:** Never read `localStorage`/`sessionStorage` in `useState` initializers or component render bodies. Always use `useEffect` for browser-only storage access to ensure SSR/client parity.
+
 ## 21. Future Improvement Backlog
 The following improvements were identified but deferred for future implementation:
 

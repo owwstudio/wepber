@@ -19,7 +19,9 @@ import {
   ScoresGrid,
   SectionsGrid,
   RecentScans,
+  WelcomeState,
 } from "@/components/home";
+import SectionSkeleton from "@/components/ui/SectionSkeleton";
 import TechStackSection from "@/components/sections/TechStackSection";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -107,11 +109,14 @@ export default function HomePage() {
         {/* Loading State — only shown before first section arrives */}
         <AnimatePresence>
           {showLoading && (
-            <LoadingState
-              elapsed={elapsed}
-              scanMsg={scanMsg}
-              designImage={designImage}
-            />
+            <>
+              <LoadingState
+                elapsed={elapsed}
+                scanMsg={scanMsg}
+                designImage={designImage}
+              />
+              <SectionSkeleton count={4} />
+            </>
           )}
         </AnimatePresence>
 
@@ -225,8 +230,12 @@ export default function HomePage() {
           )}
         </AnimatePresence>
 
-        {/* Empty State */}
-        {!loading && !result && !error && <></>}
+        {/* Welcome State */}
+        <AnimatePresence>
+          {!loading && !result && !error && (
+            <WelcomeState onScanUrl={(u) => { setUrl(u); handleScan(u); }} />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

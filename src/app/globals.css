@@ -428,9 +428,59 @@ body {
   gap: 20px;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1024px) {
   .results-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ======= MOBILE BREAKPOINT ======= */
+@media (max-width: 640px) {
+  /* Score ring compact */
+  .score-ring .score-number {
+    font-size: 28px;
+  }
+
+  .score-ring .score-label {
+    font-size: 10px;
+  }
+
+  /* Badges compact */
+  .badge {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* Input compact */
+  .glow-input {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+
+  /* Buttons compact */
+  .btn-primary {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  .btn-secondary {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  /* Table responsive */
+  .data-table {
+    font-size: 11px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 10px;
+  }
+
+  /* Glass card */
+  .glass-card {
+    border-radius: 12px;
   }
 }
 

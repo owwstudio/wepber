@@ -25,3 +25,8 @@ export type SectionKey = (typeof SECTION_KEYS)[number];
  * single global schema.
  */
 export type ScanResult = Record<string, any>;
+
+export interface ScanError {
+  type: "network" | "timeout" | "invalid-url" | "unreachable" | "server" | "unknown";
+  message: string;
+}

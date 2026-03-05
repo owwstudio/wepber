@@ -10,7 +10,7 @@ export default function ScreenshotGallery({ screenshots }: { screenshots: { labe
     return (
         <div className="screenshot-gallery">
             <div className="screenshot-gallery__header">
-                <Camera size={14} /> Screenshots — Element yang bermasalah
+                <Camera size={14} /> Screenshots — Problematic Elements
             </div>
             <div className="screenshot-gallery__grid">
                 {screenshots.map((ss, i) => (
@@ -27,7 +27,7 @@ export default function ScreenshotGallery({ screenshots }: { screenshots: { labe
                                 className="screenshot-card__image"
                             />
                             <div className="screenshot-card__overlay">
-                                <Eye size={12} /> Klik untuk memperbesar
+                                <Eye size={12} /> Click to enlarge
                             </div>
                         </div>
                         <div className="screenshot-card__footer">

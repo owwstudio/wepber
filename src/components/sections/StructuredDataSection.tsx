@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Code2, CheckCircle2, XCircle, ChevronDown, ChevronRight, Database } from "lucide-react";
 import IssuesList from "@/components/ui/IssuesList";
+import CopyButton from "@/components/ui/CopyButton";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -57,9 +58,10 @@ function SchemaCard({ schema }: { schema: any }) {
                             ))}
                         </div>
                     )}
-                    <div className="sd-raw-label">
+                    <div className="sd-raw-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <Code2 size={12} style={{ color: "var(--text-muted)" }} />
                         Raw {schema.source || "JSON-LD"} (truncated)
+                        {schema.raw && <CopyButton text={schema.raw} />}
                     </div>
                     <pre className="sd-raw-json">{schema.raw}</pre>
                 </div>

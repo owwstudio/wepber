@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import type { ScanResult } from "@/types/scan";
+import type { ScanResult, ScanError } from "@/types/scan";
 import { activeScanMessages, compareMessages } from "@/config/scanMessages";
 
 /**
@@ -23,7 +23,7 @@ export function useScan(designImage: string | null) {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ScanError | null>(null);
   const [scanMsg, setScanMsg] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [streaming, setStreaming] = useState(false);
@@ -83,7 +83,14 @@ export function useScan(designImage: string | null) {
 
           if (!res.ok) {
             const data = await res.json().catch(() => ({ error: "Scan failed" }));
-            throw new Error(data.error || "Scan failed");
+            const msg = data.error || "Scan failed";
+            const errType: ScanError["type"] =
+              res.status >= 500 ? "server" :
+              msg.toLowerCase().includes("not allowed") || msg.toLowerCase().includes("blocked") ? "unreachable" :
+              msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("url is required") ? "invalid-url" :
+              "unknown";
+            setError({ type: errType, message: msg });
+            return;
           }
 
           const reader = res.body!.getReader();
@@ -147,13 +154,11 @@ export function useScan(designImage: string | null) {
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
-          setError(
-            "Scan timed out after 120 seconds. The website may be too slow or unresponsive."
-          );
+          setError({ type: "timeout", message: "Scan timed out after 120 seconds. The website may be too slow or unresponsive." });
         } else {
-          setError(
-            err instanceof Error ? err.message : "Something went wrong"
-          );
+          const msg = err instanceof Error ? err.message : "Something went wrong";
+          const isNetwork = err instanceof TypeError || msg.includes("Failed to fetch") || msg.includes("NetworkError");
+          setError({ type: isNetwork ? "network" : "unknown", message: msg });
         }
       } finally {
         clearInterval(msgInterval);

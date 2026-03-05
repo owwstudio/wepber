@@ -30,7 +30,7 @@ export default function ScoresGrid({
     <div className="scores-grid">
       {sectionRegistry
         .filter((entry) => entry.showMiniScore && result[entry.key])
-        .map((entry) => (
+        .map((entry, index) => (
           <MiniScore
             key={entry.key}
             score={result[entry.key].score}
@@ -38,6 +38,7 @@ export default function ScoresGrid({
             icon={entry.icon}
             delta={sectionDeltas?.[entry.key]}
             onClick={() => onScrollToSection(entry.key)}
+            animationDelay={index * 0.05}
           />
         ))}
     </div>

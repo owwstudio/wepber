@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { XCircle, Gauge, ExternalLink, Link2, ChevronUp, ChevronDown } from "lucide-react";
 import IssuesList from "@/components/ui/IssuesList";
+import CopyButton from "@/components/ui/CopyButton";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -111,6 +112,7 @@ export default function LinksSection({ data }: { data: any }) {
                                                         <div className="list-card__detail-row">
                                                             <span className="list-card__detail-label">URL:</span>
                                                             <span className="list-card__detail-value list-card__detail-value--accent">{item.href}</span>
+                                                            {item.href && <CopyButton text={item.href} />}
                                                         </div>
                                                         {item.text && (
                                                             <div className="list-card__detail-row">
@@ -133,7 +135,10 @@ export default function LinksSection({ data }: { data: any }) {
                                                             <span className="badge badge-warning" style={{ fontSize: 10 }}>&lt;{item.tag}&gt;</span>
                                                         </div>
                                                         <div style={{ fontSize: 12 }}>
-                                                            <span style={{ color: "var(--text-muted)" }}>HTML:</span>
+                                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                                <span style={{ color: "var(--text-muted)" }}>HTML:</span>
+                                                                {item.html && <CopyButton text={item.html} />}
+                                                            </div>
                                                             <code style={{ fontSize: 10, color: "var(--text-muted)", wordBreak: "break-all", background: "rgba(0,0,0,0.2)", padding: "2px 6px", borderRadius: 4, display: "block", marginTop: 4 }}>
                                                                 {item.html}
                                                             </code>
@@ -159,12 +164,12 @@ export default function LinksSection({ data }: { data: any }) {
                     )}
 
                     <div className="list-summary">
-                        Menampilkan {visible.length} dari {filtered.length} item
+                        Showing {visible.length} of {filtered.length} items
                     </div>
                 </div>
             ) : (
                 <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: 13 }}>
-                    Tidak ada item pada tab ini
+                    No items on this tab
                 </div>
             )}
 

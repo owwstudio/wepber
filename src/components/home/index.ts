@@ -6,3 +6,4 @@ export { default as CompareResult } from "./CompareResult";
 export { default as ScoresGrid } from "./ScoresGrid";
 export { default as SectionsGrid } from "./SectionsGrid";
 export { default as RecentScans } from "./RecentScans";
+export { default as WelcomeState } from "./WelcomeState";

@@ -33,7 +33,7 @@ export default function SectionsGrid({
 }: SectionsGridProps) {
   return (
     <div className="sections-grid">
-      {sectionRegistry.map((entry) => {
+      {sectionRegistry.map((entry, index) => {
         const data = result[entry.key];
         if (!data) return null;
 
@@ -59,6 +59,7 @@ export default function SectionsGrid({
             score={score}
             open={openSections[entry.key]}
             onOpenChange={(v) => onSectionOpenChange(entry.key, v)}
+            animationDelay={index * 0.04}
           >
             <Component
               data={data}

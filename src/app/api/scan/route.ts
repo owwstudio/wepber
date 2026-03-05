@@ -893,13 +893,13 @@ export async function POST(request: NextRequest) {
                 const shot = await captureHighlighted(
                     'img', '!el.hasAttribute("alt")', '#f97316', 'Missing Alt'
                 );
-                if (shot) imageScreenshots.push({ label: `${withoutAlt} image(s) tanpa alt text`, image: shot });
+                if (shot) imageScreenshots.push({ label: `${withoutAlt} image(s) without alt text`, image: shot });
             }
             if (broken > 0) {
                 const shot = await captureHighlighted(
                     'img', 'el.complete && el.naturalWidth === 0 && el.src', '#ef4444', 'Broken'
                 );
-                if (shot) imageScreenshots.push({ label: `${broken} gambar broken`, image: shot });
+                if (shot) imageScreenshots.push({ label: `${broken} broken image(s)`, image: shot });
             }
 
             imageResult = {
@@ -1022,7 +1022,7 @@ export async function POST(request: NextRequest) {
                     '!(el.textContent || "").trim() && !el.getAttribute("aria-label") && !el.getAttribute("title")',
                     '#eab308', 'No Label'
                 );
-                if (shot) linkScreenshots.push({ label: `${linkData.buttonsWithoutLabels} button tanpa label`, image: shot });
+                if (shot) linkScreenshots.push({ label: `${linkData.buttonsWithoutLabels} button(s) without label`, image: shot });
             }
 
             linkResult = {
@@ -1711,7 +1711,7 @@ export async function POST(request: NextRequest) {
                     'img', '!el.hasAttribute("alt")', '#f97316', 'No Alt'
                 );
                 a11yCategoryScreenshots.imagesNoAlt = shot;
-                if (shot) a11yScreenshots.push({ label: `${a11yData.imgsNoAlt} image(s) tanpa alt text`, image: shot });
+                if (shot) a11yScreenshots.push({ label: `${a11yData.imgsNoAlt} image(s) without alt text`, image: shot });
             }
             if (a11yData.linksNoText > 0) {
                 const shot = await captureHighlighted(
@@ -1720,7 +1720,7 @@ export async function POST(request: NextRequest) {
                     '#a855f7', 'No Text'
                 );
                 a11yCategoryScreenshots.linksNoText = shot;
-                if (shot) a11yScreenshots.push({ label: `${a11yData.linksNoText} link tanpa teks`, image: shot });
+                if (shot) a11yScreenshots.push({ label: `${a11yData.linksNoText} link(s) without text`, image: shot });
             }
             if (a11yData.btnsNoLabel > 0) {
                 const shot = await captureHighlighted(
@@ -1729,7 +1729,7 @@ export async function POST(request: NextRequest) {
                     '#eab308', 'No Label'
                 );
                 a11yCategoryScreenshots.buttonsNoLabel = shot;
-                if (shot) a11yScreenshots.push({ label: `${a11yData.btnsNoLabel} button tanpa label`, image: shot });
+                if (shot) a11yScreenshots.push({ label: `${a11yData.btnsNoLabel} button(s) without label`, image: shot });
             }
             if (a11yData.inputsNoLabel > 0) {
                 const shot = await captureHighlighted(
@@ -1738,7 +1738,7 @@ export async function POST(request: NextRequest) {
                     '#ec4899', 'No Label'
                 );
                 a11yCategoryScreenshots.inputsNoLabel = shot;
-                if (shot) a11yScreenshots.push({ label: `${a11yData.inputsNoLabel} input tanpa label`, image: shot });
+                if (shot) a11yScreenshots.push({ label: `${a11yData.inputsNoLabel} input(s) without label`, image: shot });
             }
 
             accessibilityResult = {

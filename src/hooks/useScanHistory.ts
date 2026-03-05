@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { SECTION_KEYS, type SectionKey } from "@/types/scan";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -54,7 +54,13 @@ function persistHistory(entries: ScanHistoryEntry[]): void {
  * @see agent.md §18 — Historical Scan Comparison
  */
 export function useScanHistory() {
-  const [history, setHistory] = useState<ScanHistoryEntry[]>(loadHistory);
+  // Start with [] on both server and client to avoid hydration mismatch.
+  // localStorage is only available client-side, so we load it after mount.
+  const [history, setHistory] = useState<ScanHistoryEntry[]>([]);
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
 
   /**
    * Save a scan result to history. Captures current + previous

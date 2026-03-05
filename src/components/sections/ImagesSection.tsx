@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, XCircle, ChevronUp, ChevronDown } from "lucide-react";
 import IssuesList from "@/components/ui/IssuesList";
+import CopyButton from "@/components/ui/CopyButton";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -106,11 +107,12 @@ export default function ImagesSection({ data }: { data: any }) {
                                                 <div className="list-card__detail-row">
                                                     <span className="list-card__detail-label">Source:</span>
                                                     <span className="list-card__detail-value list-card__detail-value--accent">{img.src}</span>
+                                                    {img.src && <CopyButton text={img.src} />}
                                                 </div>
                                                 <div className="list-card__detail-row">
                                                     <span className="list-card__detail-label">Alt Text:</span>
                                                     <span className="list-card__detail-value" style={{ color: img.alt ? "var(--text-secondary)" : "var(--warning)" }}>
-                                                        {img.alt || "(tidak ada)"}
+                                                        {img.alt || "(none)"}
                                                     </span>
                                                 </div>
                                                 <div className="list-card__detail-row">
@@ -164,12 +166,12 @@ export default function ImagesSection({ data }: { data: any }) {
 
                     {/* Count info */}
                     <div className="list-summary">
-                        Menampilkan {visible.length} dari {filtered.length} gambar
+                        Showing {visible.length} of {filtered.length} images
                     </div>
                 </div>
             ) : (
                 <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: 13 }}>
-                    Tidak ada gambar pada tab ini
+                    No images on this tab
                 </div>
             )}
 

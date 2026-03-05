@@ -356,3 +356,57 @@
     overflow-y: auto;
     margin: 0;
 }
+
+/* ======= MOBILE BREAKPOINT ======= */
+@media (max-width: 640px) {
+    /* SEO items stack */
+    .seo-section__item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .seo-section__value {
+        max-width: 100%;
+        text-align: left;
+    }
+
+    /* CWV grid 1-col */
+    .cwv-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cwv-metric-card {
+        padding: 12px;
+    }
+
+    .cwv-metric-card__value {
+        font-size: 22px;
+    }
+
+    /* Structured Data */
+    .sd-schema-card__header {
+        padding: 10px 12px;
+    }
+
+    .sd-raw-json {
+        font-size: 10px;
+        padding: 8px;
+        max-height: 150px;
+    }
+
+    /* Headings tree */
+    .headings-section__tree {
+        max-height: 300px;
+    }
+
+    .heading-tree-item {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+
+    /* Sitemap items */
+    .sitemap-item {
+        padding: 8px 10px;
+    }
+}

@@ -9,16 +9,21 @@ export default function MiniScore({
     label,
     icon: Icon,
     onClick,
+    animationDelay = 0,
 }: {
     score: number;
     label: string;
     icon: any;
     onClick?: () => void;
+    animationDelay?: number;
 }) {
     const cls = getScoreClass(score);
     return (
         <motion.div
             className={`glass-card score-bg-${cls} mini-score${onClick ? " mini-score--clickable" : ""}`}
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.35, delay: animationDelay, ease: "easeOut" }}
             whileHover={{ scale: 1.02 }}
             onClick={onClick}
             title={onClick ? `Scroll to ${label} section` : undefined}

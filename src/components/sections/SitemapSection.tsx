@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Globe } from "lucide-react";
+import CopyButton from "@/components/ui/CopyButton";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -56,8 +57,9 @@ export default function SitemapSection({ data, onScanUrl }: { data: any; onScanU
                                 <div key={i} className="sitemap-item" onClick={() => onScanUrl?.(u.loc)}>
                                     <Globe size={14} style={{ color: "#3b82f6", flexShrink: 0 }} />
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                            {pathOnly}
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{pathOnly}</span>
+                                            <CopyButton text={u.loc} />
                                         </div>
                                         <div style={{ display: "flex", gap: 8, marginTop: 3, fontSize: 10, color: "var(--text-muted)" }}>
                                             {u.lastmod && <span>Modified: {new Date(u.lastmod).toLocaleDateString()}</span>}

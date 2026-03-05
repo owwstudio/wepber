@@ -186,3 +186,135 @@
     font-size: 20px;
     font-weight: 700;
 }
+
+/* ======= COPY BUTTON ======= */
+.copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.copy-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.copy-btn--copied {
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(34, 197, 94, 0.08);
+}
+
+/* ======= SECTION SKELETON ======= */
+.section-skeleton {
+    padding: 0 !important;
+    overflow: hidden;
+}
+
+.section-skeleton__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 22px;
+}
+
+.section-skeleton__icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+}
+
+.section-skeleton__title {
+    flex: 1;
+    height: 16px;
+    max-width: 200px;
+}
+
+.section-skeleton__badge {
+    width: 60px;
+    height: 22px;
+    border-radius: 20px;
+}
+
+.section-skeleton__body {
+    padding: 18px 22px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.section-skeleton__line {
+    height: 12px;
+}
+
+.section-skeleton__line--long {
+    width: 90%;
+}
+
+.section-skeleton__line--medium {
+    width: 70%;
+}
+
+.section-skeleton__line--short {
+    width: 45%;
+}
+
+/* ======= MOBILE BREAKPOINT ======= */
+@media (max-width: 640px) {
+    /* Collapsible sections compact */
+    .collapsible-section__header {
+        padding: 14px 16px;
+        gap: 10px;
+        font-size: 13px;
+    }
+
+    .collapsible-section__content {
+        padding: 0 16px 16px;
+        padding-top: 14px;
+    }
+
+    /* Mini score compact */
+    .mini-score {
+        padding: 10px 16px !important;
+        gap: 8px;
+    }
+
+    .mini-score__label {
+        font-size: 10px;
+    }
+
+    .mini-score__value {
+        font-size: 16px;
+    }
+
+    /* Copy button */
+    .copy-btn {
+        width: 22px;
+        height: 22px;
+    }
+
+    /* Screenshot gallery */
+    .screenshot-gallery__grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Section skeleton */
+    .section-skeleton__header {
+        padding: 14px 16px;
+    }
+
+    .section-skeleton__body {
+        padding: 14px 16px;
+    }
+}

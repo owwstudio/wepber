@@ -178,6 +178,12 @@
     font-size: 14px;
 }
 
+.error-card__suggestion {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 4px;
+}
+
 .error-card__retry-btn {
     margin-top: 16px;
     padding: 10px 24px;
@@ -684,4 +690,251 @@
 
 .page__header--expanded {
     padding-top: 20vh !important;
+}
+
+/* ======= WELCOME STATE ======= */
+.welcome-state {
+    text-align: center;
+    padding: 20px 0 40px;
+}
+
+.welcome-state__features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 24px;
+}
+
+.welcome-state__feature {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.02);
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.welcome-state__feature-icon {
+    color: var(--accent-primary);
+}
+
+.welcome-state__title {
+    font-size: 16px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.welcome-state__subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+
+.welcome-state__examples {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.welcome-state__example-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.welcome-state__example-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: rgba(99, 102, 241, 0.06);
+    color: var(--accent-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.welcome-state__example-btn:hover {
+    border-color: var(--accent-primary);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+/* ======= TABLET BREAKPOINT ======= */
+@media (max-width: 1024px) {
+    .page {
+        padding: 30px 16px;
+    }
+
+    .page__header {
+        margin-bottom: 36px;
+    }
+
+    .page__header--expanded {
+        padding-top: 12vh !important;
+    }
+
+    .compare-card__grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .compare-card {
+        padding: 20px;
+    }
+
+    .compare-card__header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .compare-card__ring-wrapper {
+        transform: scale(0.75);
+        transform-origin: left center;
+    }
+
+    .score-card {
+        padding: 22px;
+    }
+
+    .tech-stack__grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+}
+
+/* ======= MOBILE BREAKPOINT ======= */
+@media (max-width: 640px) {
+    .page {
+        padding: 20px 12px;
+    }
+
+    .page__header {
+        margin-bottom: 28px;
+    }
+
+    .page__header--expanded {
+        padding-top: 8vh !important;
+    }
+
+    .page__badge {
+        font-size: 11px;
+        padding: 6px 12px;
+    }
+
+    .page__subheadline {
+        font-size: 14px;
+    }
+
+    /* Search form stacks */
+    .search-form {
+        margin-bottom: 32px;
+    }
+
+    .search-form__row {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .search-form__row .btn-primary {
+        width: 100%;
+        padding: 14px;
+    }
+
+    /* Scores grid 2-col */
+    .scores-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    /* Score card */
+    .score-card {
+        padding: 18px;
+    }
+
+    .score-card__title {
+        font-size: 18px;
+    }
+
+    .score-card__meta {
+        font-size: 12px;
+    }
+
+    .score-card__download-btn {
+        font-size: 12px;
+        padding: 8px 16px;
+    }
+
+    /* Compare grid 1-col */
+    .compare-card {
+        padding: 16px;
+    }
+
+    .compare-card__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .compare-card__title {
+        font-size: 18px;
+    }
+
+    /* Loading state */
+    .loading-state__timer {
+        font-size: 22px;
+    }
+
+    /* Error state */
+    .error-card {
+        padding: 18px;
+    }
+
+    .error-card__title {
+        font-size: 16px;
+    }
+
+    /* Welcome state */
+    .welcome-state__features {
+        gap: 6px;
+    }
+
+    .welcome-state__feature {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    .welcome-state__examples {
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    /* Tech stack */
+    .tech-stack-card__body {
+        padding: 12px 16px 16px;
+    }
+
+    .tech-stack__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .tech-card {
+        padding: 8px 10px;
+    }
+
+    .tech-card__name {
+        font-size: 12px;
+    }
+
+    .tech-card__icon {
+        font-size: 18px;
+        width: 26px;
+    }
+
+    /* Footer */
+    .page__footer {
+        padding: 24px 0 16px;
+        font-size: 11px;
+    }
 }

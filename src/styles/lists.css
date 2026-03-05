@@ -513,3 +513,89 @@
     border: 1px solid rgba(168, 85, 247, 0.15);
     background: rgba(168, 85, 247, 0.05);
 }
+
+/* ======= MOBILE BREAKPOINT ======= */
+@media (max-width: 640px) {
+    /* Tabs smaller */
+    .tab-button {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    .tab-button__count {
+        font-size: 10px;
+        padding: 0px 5px;
+    }
+
+    /* List cards */
+    .list-card__header {
+        padding: 8px 10px;
+        gap: 8px;
+        font-size: 12px;
+    }
+
+    .list-card__detail {
+        padding: 0 10px 10px;
+        padding-top: 10px;
+    }
+
+    .list-card__detail-row {
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .list-card__detail-label {
+        min-width: unset;
+        font-size: 10px;
+    }
+
+    .list-card__detail-value {
+        font-size: 12px;
+    }
+
+    /* Accessibility items */
+    .a11y-accordion__trigger {
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+
+    .a11y-accordion__body-inner {
+        padding: 10px 12px 12px;
+    }
+
+    .a11y-item__row {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    /* Security header rows stack */
+    .sec-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        padding: 8px 10px;
+    }
+
+    .sec-header-row__left {
+        min-width: unset;
+    }
+
+    .sec-header-row__value {
+        width: 100%;
+    }
+
+    /* Security recs */
+    .sec-rec-item {
+        padding: 8px 10px;
+    }
+
+    /* Stats badges wrap */
+    .stats-badges {
+        gap: 8px;
+    }
+
+    .btn-load-more {
+        padding: 10px;
+        font-size: 12px;
+    }
+}

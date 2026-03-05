@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ImageIcon, Eye, Link2, Gauge, FileText, ChevronUp, ChevronDown, X } from "lucide-react";
 import IssuesList from "@/components/ui/IssuesList";
+import CopyButton from "@/components/ui/CopyButton";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -34,7 +35,7 @@ export default function AccessibilitySection({ data }: { data: any }) {
                         >
                             <img src={item.screenshot} alt="Element location" className="a11y-item__screenshot" />
                             <div className="a11y-item__zoom-hint">
-                                <Eye size={10} /> Klik untuk memperbesar
+                                <Eye size={10} /> Click to enlarge
                             </div>
                         </div>
                     )}
@@ -55,7 +56,10 @@ export default function AccessibilitySection({ data }: { data: any }) {
                             <Link2 size={14} className="a11y-item__icon" />
                             <span className="a11y-item__href">{item.href || "(no href)"}</span>
                         </div>
-                        <code className="a11y-item__code">{item.html}</code>
+                        <div style={{ display: "flex", alignItems: "start", gap: 6 }}>
+                            <code className="a11y-item__code" style={{ flex: 1 }}>{item.html}</code>
+                            {item.html && <CopyButton text={item.html} />}
+                        </div>
                     </div>
                     {item.screenshot && (
                         <img src={item.screenshot} alt="Element location" className="a11y-item__screenshot" />
@@ -77,7 +81,10 @@ export default function AccessibilitySection({ data }: { data: any }) {
                             <Gauge size={14} className="a11y-item__icon" />
                             <span className="badge badge-warning badge--xs">&lt;{item.tag}&gt;</span>
                         </div>
-                        <code className="a11y-item__code">{item.html}</code>
+                        <div style={{ display: "flex", alignItems: "start", gap: 6 }}>
+                            <code className="a11y-item__code" style={{ flex: 1 }}>{item.html}</code>
+                            {item.html && <CopyButton text={item.html} />}
+                        </div>
                     </div>
                     {item.screenshot && (
                         <img src={item.screenshot} alt="Element location" className="a11y-item__screenshot" />
@@ -171,7 +178,7 @@ export default function AccessibilitySection({ data }: { data: any }) {
                                             )}
 
                                             <div className="list-summary">
-                                                Menampilkan {visibleItems.length} dari {cat.items.length} item
+                                                Showing {visibleItems.length} of {cat.items.length} items
                                             </div>
                                         </div>
                                     </motion.div>

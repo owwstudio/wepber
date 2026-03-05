@@ -1,6 +1,23 @@
-import React from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useState } from "react";
+import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { getScoreColor, getScoreClass, getScoreLabel } from "@/utils/score";
+
+function AnimatedCounter({ value }: { value: number }) {
+    const [display, setDisplay] = useState(0);
+    const motionVal = useMotionValue(0);
+    const rounded = useTransform(motionVal, (v) => Math.round(v));
+
+    useEffect(() => {
+        const unsubscribe = rounded.on("change", (v) => setDisplay(v));
+        const controls = animate(motionVal, value, {
+            duration: 1.5,
+            ease: "easeOut",
+        });
+        return () => { unsubscribe(); controls.stop(); };
+    }, [value, motionVal, rounded]);
+
+    return <>{display}</>;
+}
 
 export default function ScoreRing({ score, size = 140 }: { score: number; size?: number }) {
     const radius = (size - 16) / 2;
@@ -29,9 +46,9 @@ export default function ScoreRing({ score, size = 140 }: { score: number; size?:
                     className={`score-number score-${getScoreClass(score)}`}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ delay: 0.5 }}
+                    transition={{ delay: 0.2 }}
                 >
-                    {score}
+                    <AnimatedCounter value={score} />
                 </motion.div>
                 <div className="score-label">{getScoreLabel(score)}</div>
             </div>

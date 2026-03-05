@@ -1,6 +1,7 @@
 import React from "react";
 import { ShieldCheck, ShieldAlert, ShieldX, CheckCircle2, XCircle, AlertTriangle, Lock, Globe, Cookie, Code2, ExternalLink } from "lucide-react";
 import IssuesList from "@/components/ui/IssuesList";
+import CopyButton from "@/components/ui/CopyButton";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -22,7 +23,10 @@ function HeaderRow({ label, present, value }: { label: string; present: boolean;
                 <span className="sec-header-row__label">{label}</span>
             </div>
             {present && value ? (
-                <code className="sec-header-row__value">{value}</code>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <code className="sec-header-row__value">{value}</code>
+                    <CopyButton text={value} />
+                </div>
             ) : (
                 <span className="sec-header-row__missing">Not set</span>
             )}

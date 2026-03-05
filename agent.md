@@ -123,29 +123,86 @@ This file contains context, historical decisions, and bug-fix notes specifically
   - Always use `Promise.allSettled()` for external network calls (link checking, sitemap fetching) — never `Promise.all()` which fails-fast on any rejection.
   - Constants are the single source of truth for timing — never hardcode timeouts in the scan body.
 
-## 17. Future Improvement Backlog
+## 17. Accuracy Improvements
+- **GET fallback for link checking:** HEAD requests that fail (status >= 400 or timeout) are retried with `method: "GET"` before marking as broken. This eliminates false positives from WAF/CDN servers that reject HEAD.
+- **Weighted accessibility scoring:** Penalty is proportional to element count per category, capped at defined thresholds (`A11Y_CAP_*` constants). Example: 2 images without alt penalizes less than 20. Weights: images 30%, links 25%, buttons 25%, inputs 20%.
+- **CWV throttled mode:** Optional CPU (4x) + network (1.6 Mbps) throttling via Chrome DevTools Protocol. Enabled by `cwvThrottle: true` in `scanner.config.json`.
+- **Structured data: Microdata + RDFa:** Detection expanded from JSON-LD only to include `itemscope`/`itemprop` (Microdata) and `typeof`/`property` (RDFa). Source badge shown in `StructuredDataSection.tsx`.
+
+## 18. Scan History & Score Deltas
+- **Implementation:** Scan results are saved to `localStorage` (max 20 entries, FIFO eviction). Each entry stores URL, timestamp, overall + per-section scores, and the *previous* scan's scores for the same URL.
+- **Architecture:**
+  - `src/hooks/useScanHistory.ts` — `addEntry()`, `getScoreDeltas()`, `clearHistory()` methods.
+  - `src/components/home/RecentScans.tsx` — Shows last 5 scanned URLs below the search form with scores, relative timestamps, and delta badges. Click to re-scan.
+  - `src/components/home/ScanScoreCard.tsx` — `overallDelta` prop shows ↑↓ badge vs previous scan.
+  - `src/components/ui/MiniScore.tsx` — `delta` prop shows per-section ↑↓ badges.
+  - `src/components/home/ScoresGrid.tsx` — `sectionDeltas` prop passed through from history hook.
+- **Rules:**
+  - History is saved ONLY after the scan is fully complete (`!streaming`) and the result has `overallScore`.
+  - Compare mode results (diffImage) are NOT saved to history.
+  - `previousOverallScore` and `previousSectionScores` are captured from the existing entry before it's replaced — this preserves exactly one level of delta history.
+  - History is cleared manually via the trash icon in the RecentScans component.
+
+## 19. Progressive Result Streaming (SSE)
+- **Problem:** The scan API (`/api/scan`) took 15-50s to complete. Users saw nothing until the entire scan finished.
+- **Solution:** The scan API now returns a `ReadableStream` with Server-Sent Events (SSE). Each scan section emits its result immediately upon completion, and the client renders sections progressively.
+- **Server-side (`src/app/api/scan/route.ts`):**
+  - Validation (rate limit, SSRF, body parse) runs BEFORE the stream starts — errors return standard `NextResponse.json()`.
+  - Scan logic is wrapped in `new ReadableStream({ async start(controller) { ... } })`.
+  - `emit(type, payload)` helper enqueues SSE events: `status`, `section`, `screenshot`, `complete`, `error`.
+  - 13 `emit("section", ...)` calls inserted after each scan section completes.
+  - Response uses `Content-Type: text/event-stream` with `no-cache` headers.
+- **Client-side (`src/hooks/useScan.ts`):**
+  - Scan mode uses `fetch().body.getReader()` to read the stream incrementally.
+  - A `TextDecoder` + buffer splits on `\n\n` to parse SSE events.
+  - `result` state is progressively built via `setResult(prev => ({ ...prev, [key]: data }))`.
+  - New states: `streaming` (boolean), `streamStatus` (string from status events).
+  - Compare mode (`designImage` present) still uses traditional JSON fetch.
+- **UI behavior during streaming:**
+  - `LoadingState` is hidden once the first section arrives (`showLoading = loading && !result`).
+  - `ScanScoreCard` shows score ring at 0 with "Scanning..." badge during streaming.
+  - PDF download button is hidden during streaming.
+  - Section cards and mini-score badges appear one by one as they stream in.
+  - Footer is hidden during streaming.
+- **Rules:**
+  - NEVER switch Compare mode to streaming — it uses a different endpoint.
+  - The `emit()` function is wrapped in try-catch — if the stream is closed early (client abort), the server continues silently.
+  - Error events close the stream; the client shows the error message.
+
+## 20. Enhanced PDF Report (Text-Based)
+- **Enhancement:** The PDF report now includes per-section detail metrics beyond just the score number.
+- **Section details include:**
+  - **SEO:** Title value/length, description value/length, canonical URL, issue count
+  - **Headings:** H1 count, total headings
+  - **Images:** Total/with-alt/without-alt/broken counts
+  - **Links:** Total/internal/external counts, broken links list
+  - **Performance:** Load time, page size, DOM elements, top recommendation
+  - **Core Web Vitals:** LCP/CLS/TBT values with ratings
+  - **Accessibility:** Per-category issue counts (images, links, buttons, inputs)
+  - **Security:** HTTPS status, missing headers list
+  - **Responsive:** Responsive status, viewport meta, tap target issues
+  - **Structured Data:** Schema types found with sources
+  - **Tech Stack:** Technology names and versions (up to 12)
+- **Layout improvements:** Color-coded score values (green/yellow/red), divider lines between sections, overall issue summary, branded footer.
+- **Architecture:** `sectionDetails` map in `downloadPDF.ts` — each key maps to a writer function that extracts and formats section-specific data. Generic fallback shows issue count for sections without a dedicated writer.
+- **Rule:** PDF export MUST remain text-based (jsPDF text-mapping). Do NOT use html2canvas or visual snapshotting. See §10.
+
+## 21. Future Improvement Backlog
 The following improvements were identified but deferred for future implementation:
 
-### Medium Priority (Accuracy)
-- **Retry failed links with GET fallback:** Some servers reject HEAD requests but respond to GET. Retry dead links with `method: "GET"` before marking as broken.
-- **Weighted accessibility scoring:** Current formula penalizes 20 points per category regardless of severity. Weight by element count (e.g., 50 images without alt > 1 button without label).
-- **CWV throttled mode option:** Add an optional CPU/network throttling toggle for CWV to simulate real mobile conditions (was removed for speed).
-- **Structured data: microdata/RDFa support:** Currently only checks JSON-LD. Add `itemscope`/`itemprop` microdata and RDFa detection.
-
-### Lower Priority (UX & Features)
-- **Progressive result streaming:** Use Server-Sent Events (SSE) or chunked transfer to send section results as they complete, instead of waiting for the full scan.
-- **Historical scan comparison:** Store previous scan results and show score deltas (improvement/regression per section).
+### Lower Priority (Features)
 - **Lighthouse integration:** Optionally run Lighthouse via Puppeteer for industry-standard performance scoring alongside custom metrics.
-- **PDF report: visual section screenshots:** Include accessibility/responsive screenshots in the PDF report (currently text-only).
 - **Sitemap URL batch scanning:** Allow scanning multiple URLs from a sitemap in sequence with aggregated scoring.
 
 ### Code Quality
-- **Extract scan sections into modules:** The 2500+ line `route.ts` could be split into per-section modules (`scanSeo.ts`, `scanLinks.ts`, etc.) with a thin orchestrator.
+- **Extract scan sections into modules:** The 2700+ line `route.ts` could be split into per-section modules (`scanSeo.ts`, `scanLinks.ts`, etc.) with a thin orchestrator.
 - **Result type safety:** Replace `any` type assertions in section components with proper typed interfaces derived from API response shapes.
 - **Unit tests for scoring functions:** Extract score calculation logic into pure functions and add test coverage.
 
 ## Workflow Reminders
-- When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file.
+- When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file AND add an `emit("section", ...)` call after the section completes.
 - Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).
-- When adding a new section: (1) create section component in `src/components/sections/`, (2) add key to `SECTION_KEYS` in `src/types/scan.ts`, (3) add entry to `sectionRegistry` in `src/config/sectionRegistry.ts`. No changes needed in `page.tsx`.
+- When adding a new section: (1) create section component in `src/components/sections/`, (2) add key to `SECTION_KEYS` in `src/types/scan.ts`, (3) add entry to `sectionRegistry` in `src/config/sectionRegistry.ts`, (4) add `emit("section", ...)` in route.ts. No changes needed in `page.tsx`.
 - When tuning scan performance, modify ONLY the named constants at the top of `route.ts`. Run a full scan after changes to verify no regressions.
+- When modifying PDF export, add section detail writer to `sectionDetails` map in `downloadPDF.ts`. Keep text-based — do NOT use canvas or visual snapshotting.
+- Scan history is stored in localStorage under key `coaxa_scan_history`. Max 20 entries.

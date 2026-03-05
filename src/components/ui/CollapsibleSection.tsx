@@ -15,9 +15,10 @@ const CollapsibleSection = forwardRef<
         defaultOpen?: boolean;
         open?: boolean;
         onOpenChange?: (open: boolean) => void;
+        animationDelay?: number;
     }
 >(function CollapsibleSection(
-    { title, icon: Icon, score, children, defaultOpen = false, open: openProp, onOpenChange },
+    { title, icon: Icon, score, children, defaultOpen = false, open: openProp, onOpenChange, animationDelay = 0 },
     ref
 ) {
     const [openInternal, setOpenInternal] = useState(defaultOpen);
@@ -42,7 +43,7 @@ const CollapsibleSection = forwardRef<
             className="glass-card collapsible-section"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.4, delay: animationDelay, ease: "easeOut" }}
         >
             <button
                 onClick={toggle}

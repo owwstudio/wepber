@@ -442,3 +442,51 @@ The following improvements were identified but deferred for future implementatio
 - When tuning scan performance, modify ONLY the named constants at the top of `route.ts`. Run a full scan after changes to verify no regressions.
 - When modifying PDF export, add section detail writer to `sectionDetails` map in `downloadPDF.ts`. Keep text-based — do NOT use canvas or visual snapshotting.
 - Scan history is stored in localStorage under key `coaxa_scan_history`. Max 20 entries.
+
+## 29. Disclaimer / How This Scanner Works Modal
+
+**File:** `src/components/home/DisclaimerModal.tsx`
+**CSS:** `src/styles/page.css` — `.disclaimer-backdrop`, `.disclaimer-panel`, `.disclaimer-item`, `.footer-disclaimer-btn`
+
+**Layout:** Centered dialog on desktop (`60vw × 80vh`), full-width bottom sheet on mobile (`≤640px`).
+
+**Triggered by:** "How measurements work" dotted-underline button in `page__footer` (visible only when `!streaming`).
+
+**Feature-Aware Filtering:**
+- Imports `scanner.config.json` directly: `import scannerConfig from "../../../scanner.config.json"`
+- Each item in `ALL_ITEMS` has a `feature: FeatureKey | null` property
+- Items with `feature: null` — always shown (methodology, privacy, general caveats)
+- Items with a feature key — only shown if `scannerConfig.features[key] === true`
+- Subtitle dynamically shows: "Showing N sections — based on your active features"
+
+**Item → Feature mapping:**
+
+| Item | Feature key | Always shown? |
+|------|-------------|--------------|
+| What We Do (Puppeteer) | — | ✅ |
+| Server Location | — | ✅ |
+| Scan Timing (adaptive wait) | — | ✅ |
+| Scores Are Relative | — | ✅ |
+| What We Can/Cannot See | — | ✅ |
+| Privacy — We Store Nothing | — | ✅ |
+| SEO Metadata | `seo` | — |
+| Heading Structure | `headings` | — |
+| Image Analysis | `images` | — |
+| Link Checking | `links` | — |
+| Performance Metrics | `performance` | — |
+| Core Web Vitals | `coreWebVitals` | — |
+| Accessibility | `accessibility` | — |
+| Responsive & Tap Targets | `responsive` | — |
+| Security Headers | `security` | — |
+| Visual Consistency | `visual` | — |
+| Overlap Detection | `overlaps` | — |
+| Tech Stack Detection | `techStack` | — |
+| Sitemap & Robots | `sitemap` | — |
+| Structured Data | `structuredData` | — |
+
+**Rules:**
+- To add a new feature's disclaimer: add an entry to `ALL_ITEMS` with the appropriate `feature` key.
+- Privacy section (`feature: null`) must always remain present and accurate.
+- Modal MUST be rendered outside `.page__container` to avoid overflow clipping.
+- Trigger button ONLY in footer with `!streaming` guard.
+

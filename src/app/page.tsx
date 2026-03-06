@@ -23,6 +23,7 @@ import {
   WelcomeState,
 } from "@/components/home";
 import SectionSkeleton from "@/components/ui/SectionSkeleton";
+import DisclaimerModal from "@/components/home/DisclaimerModal";
 import TechStackSection from "@/components/sections/TechStackSection";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -61,6 +62,7 @@ export default function HomePage() {
 
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   // Unified URL state: scan URL drives both modes
   const url = scanUrl;
@@ -285,6 +287,13 @@ export default function HomePage() {
               {!streaming && (
                 <div className="page__footer">
                   © 2026 COAXA — by One Week Wonders
+                  <br />
+                  <button
+                    className="footer-disclaimer-btn"
+                    onClick={() => setShowDisclaimer(true)}
+                  >
+                    How measurements work
+                  </button>
                 </div>
               )}
             </motion.div>
@@ -302,6 +311,9 @@ export default function HomePage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Disclaimer Modal — rendered outside container so it overlays everything */}
+      <DisclaimerModal open={showDisclaimer} onClose={() => setShowDisclaimer(false)} />
     </div>
   );
 }

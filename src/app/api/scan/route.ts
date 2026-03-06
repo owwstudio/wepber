@@ -2077,7 +2077,7 @@ export async function POST(request: NextRequest) {
                             const tapPenalty = Math.min(30, Math.round((mobileMetrics.tapIssues / Math.max(1, mobileMetrics.tapTotal)) * 60));
                             responsiveScore -= tapPenalty;
                             if (tapPenalty > 5) {
-                                responsiveIssues.push(`${mobileMetrics.tapIssues} interactive elements are too small (target size < 44px).`);
+                                responsiveIssues.push(`${mobileMetrics.tapIssues} interactive elements are too small (target size < ${MIN_TAP_SIZE_PX}px).`);
                             }
                         }
 

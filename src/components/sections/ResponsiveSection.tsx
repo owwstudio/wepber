@@ -66,7 +66,7 @@ export default function ResponsiveSection({ data }: { data: any }) {
                         <div className="responsive-metric__title">Tap Targets</div>
                         <div className="responsive-metric__status" style={{ color: data.tapTargets.issues === 0 ? "var(--success)" : "var(--warning)" }}>
                             {data.tapTargets.issues === 0 ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                            {data.tapTargets.issues === 0 ? "All interactive elements are well-sized" : `${data.tapTargets.issues} elements are too small (< 44px)`}
+                            {data.tapTargets.issues === 0 ? "All interactive elements are well-sized" : `${data.tapTargets.issues} elements are too small (< 25px)`}
                         </div>
                     </div>
 
@@ -91,7 +91,7 @@ export default function ResponsiveSection({ data }: { data: any }) {
                         Tap Target Issues ({data.tapTargets.issues})
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-                        The following elements are smaller than the recommended 44x44px touch target size.
+                        The following elements are smaller than the recommended 25x25px touch target size.
                         Highlight boxes are shown on the mobile preview for elements visible in the first viewport.
                     </div>
                     <div style={{ display: "grid", gap: 6, maxHeight: 300, overflowY: "auto", paddingRight: 4 }}>

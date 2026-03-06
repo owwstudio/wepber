@@ -86,13 +86,28 @@ export default function HomePage() {
     if (!designImage) clearCompareResult();
   }, [designImage, clearCompareResult]);
 
+  // Auto-scan from ?q= query param (shareable scan links)
+  // e.g. coaxa.com?q=stripe.com → immediately starts scan for stripe.com
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    if (q) {
+      const decoded = decodeURIComponent(q);
+      setScanUrl(decoded);
+      handleScan(decoded);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Compute score deltas for the current result
   const deltas = scanResult?.url ? getScoreDeltas(scanResult.url) : null;
 
   const handleDownloadPDF = () => downloadPDF(result, url, setIsExporting);
 
   const handleScanOrCompare = (targetUrl?: string) => {
-    const u = targetUrl || url;
+    const u = (targetUrl || url).trim();
+    if (!u) return;
+    // Update URL bar so this scan result is shareable
+    window.history.replaceState(null, "", `?q=${encodeURIComponent(u)}`);
     if (isCompareMode) {
       compare(u, designImage!);
     } else {
@@ -141,6 +156,7 @@ export default function HomePage() {
           <RecentScans
             history={history}
             onScanUrl={(u: string) => {
+              window.history.replaceState(null, "", `?q=${encodeURIComponent(u)}`);
               setUrl(u);
               handleScan(u);
             }}
@@ -277,7 +293,11 @@ export default function HomePage() {
         {/* Welcome State */}
         <AnimatePresence>
           {!loading && !result && !error && (
-            <WelcomeState onScanUrl={(u) => { setUrl(u); handleScan(u); }} />
+            <WelcomeState onScanUrl={(u) => {
+              window.history.replaceState(null, "", `?q=${encodeURIComponent(u)}`);
+              setUrl(u);
+              handleScan(u);
+            }} />
           )}
         </AnimatePresence>
       </div>

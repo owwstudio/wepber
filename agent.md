@@ -15,9 +15,11 @@ This file contains context, historical decisions, and bug-fix notes specifically
 - **Solution & Rules Established:** 
     - Horizontal scroll checks MUST evaluate BOTH `document.documentElement` and `document.body`.
     - Tap targets MUST only be evaluated if `window.getComputedStyle(el)` confirms they are visibly rendered on screen (`display !== 'none'`, `opacity > 0`, etc.).
+    - **Tap Target Minimum Size:** `MIN_TAP_SIZE_PX = 25` (px). Defined as a named constant at the top of `route.ts`. Elements smaller than 25×25px on both width OR height are flagged. To change, update ONLY this constant — do not hardcode the value inline.
     - **Element Consistency Threshold:** The element count comparison was re-introduced but with a much more lenient **50% difference threshold** (`desktopTotal * 0.5`). 
 - **Critical Bug Fixed:** In one interaction, the `elementConsistency` property was entirely removed from `route.ts`, which caused the frontend `ResponsiveSection.tsx` to crash (`Cannot read properties of undefined (reading 'hiddenOnMobile')`). 
     - **Takeaway:** Always ensure changes to API return types (`ResponsiveResult`) in `route.ts` are immediately mirrored in the frontend components (e.g., `src/components/sections/ResponsiveSection.tsx`). The property has since been restored with the 50% threshold logic.
+
 
 ## 3. Design vs Website Visual Comparison Feature
 - **Implementation:** Added a feature to bypass standard SEO scanning and perform a visual regression test (`pixelmatch`).
@@ -259,25 +261,6 @@ Two breakpoints added across all CSS files:
 - **Fix (`src/hooks/useScanHistory.ts`):** Changed to `useState<ScanHistoryEntry[]>([])` + `useEffect(() => setHistory(loadHistory()), [])`. Both server and client start with `[]`; localStorage is loaded after mount.
 - **Rule:** Never read `localStorage`/`sessionStorage` in `useState` initializers or component render bodies. Always use `useEffect` for browser-only storage access to ensure SSR/client parity.
 
-## 21. Future Improvement Backlog
-The following improvements were identified but deferred for future implementation:
-
-### Lower Priority (Features)
-- **Lighthouse integration:** Optionally run Lighthouse via Puppeteer for industry-standard performance scoring alongside custom metrics.
-- **Sitemap URL batch scanning:** Allow scanning multiple URLs from a sitemap in sequence with aggregated scoring.
-
-### Code Quality
-- **Extract scan sections into modules:** The 2700+ line `route.ts` could be split into per-section modules (`scanSeo.ts`, `scanLinks.ts`, etc.) with a thin orchestrator.
-- **Result type safety:** Replace `any` type assertions in section components with proper typed interfaces derived from API response shapes.
-- **Unit tests for scoring functions:** Extract score calculation logic into pure functions and add test coverage.
-
-## Workflow Reminders
-- When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file AND add an `emit("section", ...)` call after the section completes.
-- Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).
-- When adding a new section: (1) create section component in `src/components/sections/`, (2) add key to `SECTION_KEYS` in `src/types/scan.ts`, (3) add entry to `sectionRegistry` in `src/config/sectionRegistry.ts`, (4) add `emit("section", ...)` in route.ts. No changes needed in `page.tsx`.
-- When tuning scan performance, modify ONLY the named constants at the top of `route.ts`. Run a full scan after changes to verify no regressions.
-- When modifying PDF export, add section detail writer to `sectionDetails` map in `downloadPDF.ts`. Keep text-based — do NOT use canvas or visual snapshotting.
-- Scan history is stored in localStorage under key `coaxa_scan_history`. Max 20 entries.
 
 ## 23. Empty Screenshot Buffer Guard (`sharp` Crash)
 - **Issue:** `page.screenshot({ fullPage: true })` occasionally returns an empty `Buffer` (length 0) when Puppeteer captures the page before it has fully painted. Passing this empty buffer directly to `sharp()` throws `"Input Buffer is empty"`, crashing the scan pipeline and sending a 500 to the client even though all other sections succeeded.
@@ -365,8 +348,6 @@ After `window.scrollTo({ top: 0 })`, iterates ALL DOM elements and:
 - Layer 3 JS runs in browser context — use plain JS syntax without TypeScript-specific types inside `page.evaluate()`.
 - Do NOT reset transforms that include `matrix()` without translate/scale — they may be legitimate layout transforms (e.g. sticky headers).
 
-
-
 ## 26. Layout Integrity Section — Overlaps & Clipping Audit
 
 **New section key:** `overlaps` (added to `SECTION_KEYS` in `src/types/scan.ts`)
@@ -377,7 +358,7 @@ After `window.scrollTo({ top: 0 })`, iterates ALL DOM elements and:
 
 2. **Cropped images** — `<img>` elements whose rendered size (via `getBoundingClientRect()`) is less than 60% of `naturalWidth` or `naturalHeight`, AND whose parent container uses `overflow:hidden`. Capped at 10 results.
 
-3. **Unintentional element overlaps** — Collects up to 80 visible content elements (`p`, `h1`–`h6`, `img`, `a`, `button`, `input`, etc.), runs pairwise `getBoundingClientRect()` intersection check, skips parent/child pairs and intentional roles (`dialog`, `tooltip`, `menu`). Only flags overlaps covering >30% of the smaller element's area. Capped at 10 results.
+3. **Element bounding-box collisions (v2 AABB)** — Queries `document.querySelectorAll('*')` on the full page, converts each element's rect to page-absolute coordinates (`rect + scrollX/scrollY`), sorts by area descending, caps at 200, then runs pairwise AABB intersection. Flags any pair whose overlap area is **> 5%** of the smaller element. Skips SVG internals, `position:fixed|sticky`, invisible elements, and area < 400px².
 
 **Scoring formula:**
 ```
@@ -409,3 +390,55 @@ score = max(0, 100 − clippedTexts×8 − clippedImages×10 − overlaps×12)
 - Do NOT lower the 5% threshold below 3% — will produce false positives on inline elements
 - The 200-element cap is sorted by area — largest elements first, which are most likely to cause visible overlaps
 
+
+## 27. ScanScoreCard — Smooth State Transition Animations
+
+**File:** `src/components/home/ScanScoreCard.tsx`
+
+All conditional renders that previously popped in/out instantly were replaced with `AnimatePresence` + `motion.*`:
+
+| Element | Animation |
+|---------|-----------|
+| Card entrance | `opacity 0→1 + scale 0.96→1 + y 10→0`, duration 0.4s |
+| Loader → ScoreRing | `AnimatePresence mode="wait"` — loader scales/fades out, ring springs in with cubic-bezier `[0.34, 1.56, 0.64, 1]` (bounce) |
+| Title | Slides up from `y:8`, `delay: 0.1s` |
+| Delta badge | Slides up from `y:8`, `delay: 0.18s` (stagger after title) |
+| Meta text | `AnimatePresence mode="wait"` cross-fade between "Preparing data..." and scan date |
+| PDF Download button | Slides from `y:10`, `delay: 0.25s` |
+
+**Rules:**
+- Ring container uses `position: relative; minHeight: 160px` with children `position: absolute; inset: 0` — prevents card height jump during loader→ring swap.
+- `AnimatePresence mode="wait"` on ring and meta ensures outgoing element fully exits before incoming enters.
+- Do NOT nest `transition` inside `animate` in a shared `const` object — pass `transition` as a separate prop to avoid TS `ease` type mismatch.
+
+## 28. Shareable Scan Links (`?q=` Query Param)
+
+**File:** `src/app/page.tsx`
+
+- On page load: reads `?q=` param, decodes it, sets the URL input, and auto-triggers a scan.
+- On every scan trigger (manual, recent history, welcome examples): calls `window.history.replaceState(null, "", \`?q=\${encodeURIComponent(u)}\`)`.
+- The mount `useEffect` has `[]` deps with `eslint-disable react-hooks/exhaustive-deps` — intentional (run once on load only).
+
+---
+
+## Appendix: Future Improvement Backlog
+The following improvements were identified but deferred for future implementation:
+
+### Lower Priority (Features)
+- **Lighthouse integration:** Optionally run Lighthouse via Puppeteer for industry-standard performance scoring alongside custom metrics.
+- **Sitemap URL batch scanning:** Allow scanning multiple URLs from a sitemap in sequence with aggregated scoring.
+
+### Code Quality
+- **Extract scan sections into modules:** The 2700+ line `route.ts` could be split into per-section modules (`scanSeo.ts`, `scanLinks.ts`, etc.) with a thin orchestrator.
+- **Result type safety:** Replace `any` type assertions in section components with proper typed interfaces derived from API response shapes.
+- **Unit tests for scoring functions:** Extract score calculation logic into pure functions and add test coverage.
+
+---
+
+## Workflow Reminders
+- When adding new metrics or scanners in `/api/scan/route.ts`, always update the corresponding `Result` interfaces at the top of the file AND add an `emit("section", ...)` call after the section completes.
+- Any UI visual changes corresponding to the API must reflect gracefully (handle `undefined` checks if data structures mutate).
+- When adding a new section: (1) create section component in `src/components/sections/`, (2) add key to `SECTION_KEYS` in `src/types/scan.ts`, (3) add entry to `sectionRegistry` in `src/config/sectionRegistry.ts`, (4) add `emit("section", ...)` in route.ts. No changes needed in `page.tsx`.
+- When tuning scan performance, modify ONLY the named constants at the top of `route.ts`. Run a full scan after changes to verify no regressions.
+- When modifying PDF export, add section detail writer to `sectionDetails` map in `downloadPDF.ts`. Keep text-based — do NOT use canvas or visual snapshotting.
+- Scan history is stored in localStorage under key `coaxa_scan_history`. Max 20 entries.

@@ -123,7 +123,8 @@ export default function HomePage() {
       <div className="page__container">
         {/* Header */}
         <motion.div
-          className={`page__header ${result ? "page__header--compact" : "page__header--expanded"}`}
+          // className={`page__header ${result ? "page__header--compact" : "page__header--expanded"}`}
+          className="page__header"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -175,7 +176,7 @@ export default function HomePage() {
                 streamStatus={compareStatus}
               />
               {/* Only show skeletons in scan mode — compare has no sections */}
-              {!isCompareMode && <SectionSkeleton count={4} />}
+              {!isCompareMode && <SectionSkeleton count={2} />}
             </>
           )}
         </AnimatePresence>
@@ -283,7 +284,7 @@ export default function HomePage() {
               {/* Footer */}
               {!streaming && (
                 <div className="page__footer">
-                  COAXA — Powered by One Week Wonders
+                  © 2026 COAXA — by One Week Wonders
                 </div>
               )}
             </motion.div>

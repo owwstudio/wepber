@@ -93,6 +93,9 @@ const A11Y_CAP_INPUTS = 10;          // cap at 10 elements for full penalty
 // Screenshot timing
 const SCREENSHOT_SETTLE_MS = 50;     // wait between highlight and screenshot capture
 
+// Responsive — Tap Target
+const MIN_TAP_SIZE_PX = 25;          // minimum tap target size in pixels (width & height)
+
 // Core Web Vitals
 const CWV_SETTLE_MS = 1_000;        // settle time for PerformanceObserver buffered entries
 
@@ -2023,7 +2026,7 @@ export async function POST(request: NextRequest) {
 
                                     if (isVisible) {
                                         visibleTapTotal++;
-                                        if (rect.width < 44 || rect.height < 44) {
+                                        if (rect.width < MIN_TAP_SIZE_PX || rect.height < MIN_TAP_SIZE_PX) {
                                             if (tapElements.length < 20) {
                                                 tapElements.push({
                                                     html: el.outerHTML.substring(0, 150) + (el.outerHTML.length > 150 ? "..." : ""),

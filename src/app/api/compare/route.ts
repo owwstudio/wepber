@@ -9,6 +9,8 @@ import path from "path";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+// Run in the Vercel region closest to the requesting user (proxy for target website region)
+export const preferredRegion = "auto";
 
 // ===== COMPARE CONSTANTS =====
 // Tunable via scanner.config.json: compareThreshold, compareSettleMs

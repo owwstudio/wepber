@@ -1,8 +1,13 @@
 {
+    "regions": ["auto"],
     "functions": {
         "src/app/api/scan/route.ts": {
-            "maxDuration": 800,
+            "maxDuration": 300,
             "memory": 3008
+        },
+        "src/app/api/compare/route.ts": {
+            "maxDuration": 60,
+            "memory": 2048
         }
     }
 }

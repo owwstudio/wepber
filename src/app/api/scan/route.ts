@@ -7,6 +7,8 @@ import path from "path";
 
 // Force Next.js never to cache this API route
 export const dynamic = "force-dynamic";
+// Run in the Vercel region closest to the requesting user (proxy for target website region)
+export const preferredRegion = "auto";
 
 // ===== RATE LIMITER (in-memory, per IP) =====
 const RATE_LIMIT_MAX = 50;   // max requests

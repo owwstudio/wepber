@@ -1,5 +1,4 @@
 {
-    "regions": ["auto"],
     "functions": {
         "src/app/api/scan/route.ts": {
             "maxDuration": 300,

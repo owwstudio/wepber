@@ -136,7 +136,7 @@ export default function HomePage() {
               One Week Wonders
             </a>
           </div>
-          <h1 className="page__headline">COAXA</h1>
+          <h1 className="page__headline"><a href="/">COAXA</a></h1>
           <p className="page__subheadline">
             An advanced web analyzer to validate SEO compliance, overall
             quality, and pixel-perfect design accuracy.

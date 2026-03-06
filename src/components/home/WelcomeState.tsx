@@ -12,7 +12,7 @@ const FEATURES = [
   { icon: Search, label: "Accessibility" },
 ];
 
-const EXAMPLE_URLS = ["stripe.com", "github.com", "vercel.com"];
+const EXAMPLE_URLS = ["oneweekwonders.com", "slabpixel.com", "blocwise.io", "visualtap.design"];
 
 interface WelcomeStateProps {
   onScanUrl: (url: string) => void;

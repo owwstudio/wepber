@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { WifiOff, Clock, Link2, Globe, ServerCrash, XCircle } from "lucide-react";
+import { WifiOff, Clock, Link2, Globe, ServerCrash, XCircle, Camera, Ruler, ImageOff } from "lucide-react";
 import type { ScanError } from "@/types/scan";
 import type { LucideIcon } from "lucide-react";
 
@@ -11,12 +11,17 @@ interface ErrorStateProps {
 }
 
 const ERROR_CONFIG: Record<ScanError["type"], { icon: LucideIcon; title: string; suggestion: string }> = {
-  network:       { icon: WifiOff,     title: "Connection Error",    suggestion: "Check your internet connection and try again." },
-  timeout:       { icon: Clock,       title: "Scan Timed Out",      suggestion: "The website may be too slow or unresponsive. Try again later." },
-  "invalid-url": { icon: Link2,       title: "Invalid URL",         suggestion: "Please enter a valid website URL (e.g., example.com)." },
-  unreachable:   { icon: Globe,       title: "Site Unreachable",    suggestion: "The website could not be reached. Verify the URL is correct." },
-  server:        { icon: ServerCrash, title: "Server Error",        suggestion: "Something went wrong on our end. Please try again." },
-  unknown:       { icon: XCircle,     title: "Scan Failed",         suggestion: "An unexpected error occurred." },
+  network: { icon: WifiOff, title: "Connection Error", suggestion: "Check your internet connection and try again." },
+  timeout: { icon: Clock, title: "Scan Timed Out", suggestion: "The website may be too slow or unresponsive. Try again later." },
+  "invalid-url": { icon: Link2, title: "Invalid URL", suggestion: "Please enter a valid website URL (e.g., example.com)." },
+  unreachable: { icon: Globe, title: "Site Unreachable", suggestion: "The website could not be reached. Verify the URL is correct." },
+  server: { icon: ServerCrash, title: "Server Error", suggestion: "Something went wrong on our end. Please try again." },
+  unknown: { icon: XCircle, title: "Scan Failed", suggestion: "An unexpected error occurred." },
+  // Compare-specific errors
+  screenshot_failed: { icon: Camera, title: "Screenshot Failed", suggestion: "The website rendered incorrectly. Try again or check the URL." },
+  dimension_mismatch: { icon: Ruler, title: "Image Size Mismatch", suggestion: "The design mockup and website screenshot have different dimensions. Try a different image." },
+  navigation_timeout: { icon: Clock, title: "Page Load Timeout", suggestion: "The website took too long to load. Try again or check the URL." },
+  invalid_image: { icon: ImageOff, title: "Invalid Design Image", suggestion: "The uploaded image could not be processed. Please upload a valid PNG or JPG." },
 };
 
 /**

@@ -14,9 +14,10 @@ function DeltaBadge({ delta }: { delta?: number }) {
   if (delta === undefined || delta === null) return null;
   if (delta === 0) {
     return (
-      <span className="recent-scans__delta recent-scans__delta--neutral">
-        <Minus size={10} /> 0
-      </span>
+      <></>
+      // <span className="recent-scans__delta recent-scans__delta--neutral">
+      //   <Minus size={10} /> 0
+      // </span>
     );
   }
   const isPositive = delta > 0;

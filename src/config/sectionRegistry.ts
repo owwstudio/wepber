@@ -25,6 +25,7 @@ import {
   Network,
   Bug,
   Map,
+  Layers,
 } from "lucide-react";
 
 import SEOSection from "@/components/sections/SEOSection";
@@ -40,6 +41,7 @@ import CoreWebVitalsSection from "@/components/sections/CoreWebVitalsSection";
 import StructuredDataSection from "@/components/sections/StructuredDataSection";
 import RobotsSection from "@/components/sections/RobotsSection";
 import SitemapSection from "@/components/sections/SitemapSection";
+import OverlapsSection from "@/components/sections/OverlapsSection";
 
 export interface SectionRegistryEntry {
   /** Unique key matching the API response property. */
@@ -180,5 +182,13 @@ export const sectionRegistry: SectionRegistryEntry[] = [
     scoreOverride: -1,
     dynamicTitle: (data) => `Sitemap (${data?.urls?.length || 0} URLs)`,
     receivesOnScanUrl: true,
+  },
+  {
+    key: "overlaps",
+    title: "Layout Integrity",
+    label: "Overlaps",
+    icon: Layers,
+    component: OverlapsSection,
+    showMiniScore: true,
   },
 ];

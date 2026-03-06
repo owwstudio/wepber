@@ -278,3 +278,134 @@ The following improvements were identified but deferred for future implementatio
 - When tuning scan performance, modify ONLY the named constants at the top of `route.ts`. Run a full scan after changes to verify no regressions.
 - When modifying PDF export, add section detail writer to `sectionDetails` map in `downloadPDF.ts`. Keep text-based — do NOT use canvas or visual snapshotting.
 - Scan history is stored in localStorage under key `coaxa_scan_history`. Max 20 entries.
+
+## 23. Empty Screenshot Buffer Guard (`sharp` Crash)
+- **Issue:** `page.screenshot({ fullPage: true })` occasionally returns an empty `Buffer` (length 0) when Puppeteer captures the page before it has fully painted. Passing this empty buffer directly to `sharp()` throws `"Input Buffer is empty"`, crashing the scan pipeline and sending a 500 to the client even though all other sections succeeded.
+- **Cause:** Race condition between the post-navigation settle wait and the browser's actual first paint cycle. Observed on WordPress and heavy SPA sites.
+- **Solution:** Added an explicit length guard before the `sharp()` call in `route.ts`:
+  ```ts
+  if (!fullScreenshotBuffer || fullScreenshotBuffer.length === 0) {
+      console.warn("[scan] Full page screenshot buffer is empty — skipping compression");
+  } else {
+      const compressedBuffer = await sharp(fullScreenshotBuffer)...
+  }
+  ```
+- **Rule:** NEVER pass a Puppeteer screenshot buffer to `sharp()` without first checking `buffer.length > 0`. The outer `try/catch` alone is insufficient because `sharp` validates the buffer synchronously before async processing begins, and the thrown error is not always caught correctly depending on the async context.
+- **Location:** `src/app/api/scan/route.ts` — Full Page Screenshot section (~line 633).
+
+## 24. Compare Feature Reliability Overhaul
+
+Eight reliability fixes applied to the compare pipeline. Do NOT revert or re-simplify these without understanding the entire chain.
+
+### Architecture Change: Compare is now SSE streaming
+- **Old:** `/api/compare` → `POST` → `NextResponse.json()` (blocking, no feedback)
+- **New:** `/api/compare` → `ReadableStream` SSE (status events during processing, then a `result` event)
+- **Client:** New dedicated hook `src/hooks/useDesignCompare.ts` handles the compare SSE. `useScan.ts` is now scan-only (no `designImage` param). `page.tsx` chooses the hook based on `designImage` presence.
+- **Rule:** NEVER merge compare SSE logic back into `useScan.ts`. They must remain decoupled.
+
+### Backend Fixes (all in `src/app/api/compare/route.ts`)
+
+1. **Cross-platform Chrome path:** Same `process.platform` switch as scan API. Works on Win/Linux/Mac/Vercel.
+2. **Navigation fallback:** `domcontentloaded` first, then `networkidle2` as optional extra wait (same pattern as §16). Heavy sites won't time out the entire compare.
+3. **Empty buffer guard (§23 pattern):** Screenshot buffer checked for `.length === 0` before passing to `sharp()`. Emits `{ type: "error", code: "screenshot_failed" }` via SSE.
+4. **Dimension safety:** Before `pixelmatch`, verifies `processedDesignBuffer.length === processedScreenshotBuffer.length === designWidth * designHeight * 4`. Emits `{ code: "dimension_mismatch" }` if mismatch.
+5. **Single-pass scroll:** Replaced laggy `setInterval` scroll with one-shot `scrollTo(0, scrollHeight)` → settle → `scrollTo(0, 0)`. Aligns with §16 Fix 2.
+6. **Configurable threshold:** `compareThreshold` (default `0.15`) and `compareSettleMs` (default `2500`) read from `scanner.config.json`.
+7. **Structured SSE errors:** `{ type: "error", code: "navigation_timeout" | "screenshot_failed" | "dimension_mismatch" | "invalid_image" | "unknown" }`.
+8. **`ScanError` type extended:** `src/types/scan.ts` union includes compare error codes. `ErrorState.tsx` maps them to specific icons/messages.
+
+### Config
+- `scanner.config.json` → `compareThreshold` and `compareSettleMs` keys added.
+- To make compare stricter: lower `compareThreshold` (e.g. `0.05`). To relax: raise it (e.g. `0.25`).
+- To give slow sites more paint time: raise `compareSettleMs` (e.g. `4000`).
+
+### Files Modified
+- `src/app/api/compare/route.ts` — full rewrite
+- `src/hooks/useDesignCompare.ts` — NEW dedicated compare hook
+- `src/hooks/useScan.ts` — simplified: removed `designImage` param + compare branch
+- `src/app/page.tsx` — wires `useDesignCompare`, passes `compareStatus` to `LoadingState`
+- `src/components/home/LoadingState.tsx` — added `streamStatus?: string` prop (shows live SSE status)
+- `src/components/home/ErrorState.tsx` — added compare error configs
+- `src/types/scan.ts` — extended `ScanError` union
+- `scanner.config.json` — added `compareThreshold`, `compareSettleMs`
+
+## 25. Compare Animation Visibility Fix (3-Layer Defense)
+
+**Problem:** Websites using AOS, WOW.js, ScrollReveal, GSAP, Elementor animation effects appear broken in Compare screenshots — elements that should be visible are invisible (opacity:0, transformed off-screen).
+
+**Root causes (all three must be fixed together):**
+1. `addStyleTag()` runs AFTER `networkidle2` — animation libraries have already set inline `opacity:0`/`transform:translateY(px)` on elements. Our CSS is too late.
+2. After single-pass scroll to bottom and back to top, `IntersectionObserver` fires again — libraries with `mirror:true` (AOS) re-hide elements that left the viewport.
+3. Missing CSS patterns: current code only covered `opacity/transform/visibility`. Missing: `clip-path`, `scale(0)`, `slideIn*` Animate.css classes, `[data-sal]`, `[data-sr]`.
+
+**3-Layer Defense implemented in `src/app/api/compare/route.ts`:**
+
+**Layer 1 — `evaluateOnNewDocument()` (before page scripts run):**
+- Overrides `window.IntersectionObserver` constructor so all entries always report `isIntersecting: true` and `intersectionRatio: 1`. This prevents AOS/WOW from ever hiding elements on scroll.
+- Injects a `<style>` tag on `DOMContentLoaded` (before animation libraries init) with animation-disabling CSS.
+- Sets `window.__coaxaCompare = true` flag.
+
+**Layer 2 — Expanded `addStyleTag()` (after navigation):**
+Added comprehensive CSS selectors: `[data-aos]`, `[data-aos-once]`, `.wow`, `.fadeIn*`, `.slideIn*`, `.zoomIn`, `.bounceIn`, `.elementor-invisible`, `.elementor-motion-effects-element`, `.animate__animated`, `[data-gsap]`, `[data-sr]`, `[data-sal]`, `.js-scroll`, `.reveal`, `.fade-in`, `.fade-up`, `.slide-up`, `.slide-in`. Also added `clip-path: none !important` and `animation-delay: 0ms !important`.
+
+**Layer 3 — Post-scroll JS force-reveal (after scroll-back to top):**
+After `window.scrollTo({ top: 0 })`, iterates ALL DOM elements and:
+- Resets `el.style.opacity = '1'` if `'0'`
+- Resets `el.style.visibility = 'visible'` if `'hidden'`
+- Clears `el.style.transform` if it contains `translate`, `scale(0)`, or `rotate`
+- Clears `el.style.clipPath` if not `'none'`
+- Resets `el.style.maxHeight` on animation-attributed elements
+- Kills GSAP tweens: `gsap.killTweensOf('*'); gsap.set('*', { clearProps: 'all' })`
+- Neuters AOS: `AOS.refresh = () => {}; AOS.refreshHard = () => {}`
+- Followed by 300ms repaint wait
+
+**Rules:**
+- ALWAYS apply all 3 layers — removing any one layer breaks a different class of website.
+- `evaluateOnNewDocument` must be called BEFORE `page.goto()` or it won't take effect.
+- Layer 3 JS runs in browser context — use plain JS syntax without TypeScript-specific types inside `page.evaluate()`.
+- Do NOT reset transforms that include `matrix()` without translate/scale — they may be legitimate layout transforms (e.g. sticky headers).
+
+
+
+## 26. Layout Integrity Section — Overlaps & Clipping Audit
+
+**New section key:** `overlaps` (added to `SECTION_KEYS` in `src/types/scan.ts`)
+
+**What it detects (3 categories):**
+
+1. **Clipped text** — elements where `scrollWidth > clientWidth + 2` or `scrollHeight > clientHeight + 2` while `overflow:hidden|clip`. Checks `h1`–`h6`, `p`, `span`, `a`, `li`, `td`, `th`, `label`, `button`, `div`. Capped at 20 results.
+
+2. **Cropped images** — `<img>` elements whose rendered size (via `getBoundingClientRect()`) is less than 60% of `naturalWidth` or `naturalHeight`, AND whose parent container uses `overflow:hidden`. Capped at 10 results.
+
+3. **Unintentional element overlaps** — Collects up to 80 visible content elements (`p`, `h1`–`h6`, `img`, `a`, `button`, `input`, etc.), runs pairwise `getBoundingClientRect()` intersection check, skips parent/child pairs and intentional roles (`dialog`, `tooltip`, `menu`). Only flags overlaps covering >30% of the smaller element's area. Capped at 10 results.
+
+**Scoring formula:**
+```
+score = max(0, 100 − clippedTexts×8 − clippedImages×10 − overlaps×12)
+```
+
+**Weight in overall score:** 6% (`overlapsResult !== undefined` check in score aggregation).
+
+**To disable:** Set `"overlaps": false` in `scanner.config.json` features block.
+
+**Files added/modified:**
+- `src/app/api/scan/route.ts` — `OverlapsResult` interface + scan logic (runs after visual section)
+- `src/components/sections/OverlapsSection.tsx` — NEW UI component (expandable lists per category)
+- `src/config/sectionRegistry.ts` — registered with `key: "overlaps"`, `Layers` icon
+- `src/types/scan.ts` — added `"overlaps"` to `SECTION_KEYS`
+- `scanner.config.json` — added `"overlaps": true`
+
+**Overlap detection algorithm (v2 — full-DOM AABB):**
+- Queries `document.querySelectorAll('*')` — ALL elements, not specific tags
+- Filters out: `script/style/meta/svg internals`, `position:fixed|sticky`, `opacity < 0.05`, `display:none`, `visibility:hidden`, `area < 400px²`
+- Converts `getBoundingClientRect()` to page-absolute coords: `x = rect.left + window.scrollX`, `y = rect.top + window.scrollY`
+- Sorts candidates by area descending, caps at **200** elements (prevents O(n²) cliff)
+- Pairwise AABB intersection test: `overlapW * overlapH / minArea * 100` → flags if **> 5%**
+- Skips ancestor-descendant pairs (parent/child false positives)
+- Result shape: `{ tagA, tagB, textA, textB, overlapPct, ax, ay, aw, ah, bx, by, bw, bh }`
+
+**Rules:**
+- Do NOT remove the `a.el.contains(b.el) || b.el.contains(a.el)` check — critical for parent/child false positives
+- Do NOT lower the 5% threshold below 3% — will produce false positives on inline elements
+- The 200-element cap is sorted by area — largest elements first, which are most likely to cause visible overlaps
+

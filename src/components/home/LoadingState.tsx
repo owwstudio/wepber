@@ -7,20 +7,25 @@ interface LoadingStateProps {
   elapsed: number;
   scanMsg: number;
   designImage: string | null;
+  /** Live status from SSE stream — overrides the generic rotating messages when present */
+  streamStatus?: string | null;
 }
 
 /**
  * Loading overlay with progress bar, rotating messages, and pulse dots.
  *
  * Uses dynamic message pool from scanMessages config.
+ * When `streamStatus` is provided (compare SSE), shows it directly.
  * Inline `style={{ width }}` permitted per agent.md §6 (dynamic calculation).
  */
 export default function LoadingState({
   elapsed,
   scanMsg,
   designImage,
+  streamStatus,
 }: LoadingStateProps) {
   const messages = designImage ? compareMessages : activeScanMessages;
+  const displayMessage = streamStatus || messages[scanMsg];
 
   return (
     <motion.div
@@ -39,13 +44,13 @@ export default function LoadingState({
         </div>
         <AnimatePresence mode="wait">
           <motion.p
-            key={scanMsg}
+            key={displayMessage}
             className="loading-state__message"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
           >
-            {messages[scanMsg]}
+            {displayMessage}
           </motion.p>
         </AnimatePresence>
       </div>

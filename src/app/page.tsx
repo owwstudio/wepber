@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Camera, Layers } from "lucide-react";
 
 import { useScan } from "@/hooks/useScan";
+import { useDesignCompare } from "@/hooks/useDesignCompare";
 import { useDesignImage } from "@/hooks/useDesignImage";
 import { useSections } from "@/hooks/useSections";
 import { useScanHistory } from "@/hooks/useScanHistory";
@@ -28,17 +29,32 @@ import TechStackSection from "@/components/sections/TechStackSection";
 
 export default function HomePage() {
   const { designImage, handleImageUpload, clearImage } = useDesignImage();
+
+  // Scan mode (no design image)
   const {
-    url,
-    setUrl,
-    loading,
-    result,
-    error,
-    scanMsg,
-    elapsed,
+    url: scanUrl,
+    setUrl: setScanUrl,
+    loading: scanLoading,
+    result: scanResult,
+    error: scanError,
+    scanMsg: scanScanMsg,
+    elapsed: scanElapsed,
     streaming,
     handleScan,
-  } = useScan(designImage);
+  } = useScan();
+
+  // Compare mode (design image present) — dedicated SSE hook
+  const {
+    loading: compareLoading,
+    result: compareResult,
+    error: compareError,
+    streamStatus: compareStatus,
+    scanMsg: compareScanMsg,
+    elapsed: compareElapsed,
+    compare,
+    clearResult: clearCompareResult,
+  } = useDesignCompare();
+
   const { openSections, sectionRefs, scrollToSection, handleSectionOpenChange } =
     useSections();
   const { history, addEntry, getScoreDeltas, clearHistory } = useScanHistory();
@@ -46,17 +62,43 @@ export default function HomePage() {
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Save completed scan results to history
+  // Unified URL state: scan URL drives both modes
+  const url = scanUrl;
+  const setUrl = setScanUrl;
+
+  // Active mode flags
+  const isCompareMode = !!designImage;
+  const loading = isCompareMode ? compareLoading : scanLoading;
+  const result = isCompareMode ? compareResult : scanResult;
+  const error = isCompareMode ? compareError : scanError;
+  const scanMsg = isCompareMode ? compareScanMsg : scanScanMsg;
+  const elapsed = isCompareMode ? compareElapsed : scanElapsed;
+
+  // Save completed scan results to history (scan mode only)
   useEffect(() => {
-    if (result && result.overallScore !== undefined && !streaming) {
-      addEntry(result);
+    if (scanResult && scanResult.overallScore !== undefined && !streaming) {
+      addEntry(scanResult);
     }
-  }, [result, streaming, addEntry]);
+  }, [scanResult, streaming, addEntry]);
+
+  // Clear compare result when design image is cleared
+  useEffect(() => {
+    if (!designImage) clearCompareResult();
+  }, [designImage, clearCompareResult]);
 
   // Compute score deltas for the current result
-  const deltas = result?.url ? getScoreDeltas(result.url) : null;
+  const deltas = scanResult?.url ? getScoreDeltas(scanResult.url) : null;
 
   const handleDownloadPDF = () => downloadPDF(result, url, setIsExporting);
+
+  const handleScanOrCompare = (targetUrl?: string) => {
+    const u = targetUrl || url;
+    if (isCompareMode) {
+      compare(u, designImage!);
+    } else {
+      handleScan(targetUrl);
+    }
+  };
 
   // Whether to show loading state (only when no partial results yet)
   const showLoading = loading && !result;
@@ -91,7 +133,7 @@ export default function HomePage() {
           designImage={designImage}
           onImageUpload={handleImageUpload}
           onClearImage={clearImage}
-          onScan={() => handleScan()}
+          onScan={() => handleScanOrCompare()}
         />
 
         {/* Recent Scans — shown when idle (no result, not loading) */}
@@ -106,7 +148,7 @@ export default function HomePage() {
           />
         )}
 
-        {/* Loading State — only shown before first section arrives */}
+        {/* Loading State — only shown before first section/result arrives */}
         <AnimatePresence>
           {showLoading && (
             <>
@@ -114,15 +156,17 @@ export default function HomePage() {
                 elapsed={elapsed}
                 scanMsg={scanMsg}
                 designImage={designImage}
+                streamStatus={compareStatus}
               />
-              <SectionSkeleton count={4} />
+              {/* Only show skeletons in scan mode — compare has no sections */}
+              {!isCompareMode && <SectionSkeleton count={4} />}
             </>
           )}
         </AnimatePresence>
 
         {/* Error */}
         <AnimatePresence>
-          {error && <ErrorState error={error} onRetry={() => handleScan()} />}
+          {error && <ErrorState error={error} onRetry={() => handleScanOrCompare()} />}
         </AnimatePresence>
 
         {/* Results — appears as soon as first section streams in */}

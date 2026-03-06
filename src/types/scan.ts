@@ -14,6 +14,7 @@ export const SECTION_KEYS = [
   "structuredData",
   "robots",
   "sitemap",
+  "overlaps",
 ] as const;
 
 export type SectionKey = (typeof SECTION_KEYS)[number];
@@ -27,6 +28,8 @@ export type SectionKey = (typeof SECTION_KEYS)[number];
 export type ScanResult = Record<string, any>;
 
 export interface ScanError {
-  type: "network" | "timeout" | "invalid-url" | "unreachable" | "server" | "unknown";
+  type: "network" | "timeout" | "invalid-url" | "unreachable" | "server" | "unknown"
+  | "screenshot_failed" | "dimension_mismatch" | "navigation_timeout" | "invalid_image";
   message: string;
 }
+

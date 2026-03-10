@@ -490,3 +490,7 @@ The following improvements were identified but deferred for future implementatio
 - Modal MUST be rendered outside `.page__container` to avoid overflow clipping.
 - Trigger button ONLY in footer with `!streaming` guard.
 
+## 30. PDF Report Disclaimer
+- **Requirement:** The downloaded PDF report must include a disclaimer text at the end of the document, matching the note from the disclaimer modal.
+- **Implementation:** Added `Disclaimer: Use scan results as a relative benchmark...` right above the footer line in `src/utils/downloadPDF.ts`.
+- **Rule:** The PDF export must clearly communicate that scores are relative benchmarks, setting the right expectations for the user when they share the generated report.

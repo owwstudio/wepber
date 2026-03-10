@@ -247,7 +247,7 @@ export async function downloadPDF(
     pdf.text("COAXA", margin, yOffset);
     pdf.setFontSize(12);
     pdf.setTextColor(120);
-    pdf.text("Validation Report", margin + 42, yOffset);
+    pdf.text("Validation Report", margin + 30, yOffset);
     yOffset += lineHeight * 2;
 
     pdf.setFontSize(10);
@@ -264,6 +264,7 @@ export async function downloadPDF(
     if (result.diffImage) {
       // Compare Mode
       pdf.setFontSize(16);
+      yOffset += lineHeight * 1;
       pdf.text("Design Match Verification", margin, yOffset);
       yOffset += lineHeight * 1.5;
 
@@ -289,8 +290,9 @@ export async function downloadPDF(
       // Scan Mode — Overall Score
       pdf.setFontSize(16);
       pdf.setTextColor(0);
+      yOffset += lineHeight * 1;
       pdf.text("Overall Quality Score", margin, yOffset);
-      yOffset += lineHeight * 1.2;
+      yOffset += lineHeight * 1.5;
 
       pdf.setFontSize(28);
       const scoreColor = result.overallScore >= 80 ? [34, 197, 94] : result.overallScore >= 50 ? [234, 179, 8] : [239, 68, 68];
@@ -318,6 +320,7 @@ export async function downloadPDF(
       yOffset = drawDivider(pdf, yOffset, margin);
 
       // Section Breakdown with Details
+      yOffset += lineHeight * 1;
       pdf.setFontSize(14);
       pdf.setTextColor(0);
       pdf.text("Section Breakdown", margin, yOffset);
@@ -385,11 +388,18 @@ export async function downloadPDF(
     }
 
     // Footer
-    yOffset = ensureSpace(pdf, yOffset, lineHeight * 3);
+    yOffset = ensureSpace(pdf, yOffset, lineHeight * 6);
     yOffset = drawDivider(pdf, yOffset + 5, margin);
+
+    yOffset += 5;
     pdf.setFontSize(8);
+    pdf.setTextColor(100);
+    const disclaimerText = "* Disclaimer: Use scan results as a relative benchmark to track improvements over time — not as absolute values to compare against other tools like Lighthouse or PageSpeed Insights.";
+    yOffset = writeWrapped(pdf, disclaimerText, margin, yOffset, maxTextWidth, 4);
+
+    yOffset += 4;
     pdf.setTextColor(150);
-    pdf.text("COAXA — Powered by One Week Wonders | oneweekwonders.com", margin, yOffset + 3);
+    pdf.text("COAXA — Powered by One Week Wonders | oneweekwonders.com", margin, yOffset);
 
     let hostName = "website";
     try {

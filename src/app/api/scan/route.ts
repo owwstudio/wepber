@@ -4,6 +4,7 @@ import puppeteer from "puppeteer-core";
 import sharp from "sharp";
 import fs from "fs";
 import path from "path";
+import { isSafeUrl } from "@/utils/security";
 
 // Force Next.js never to cache this API route
 export const dynamic = "force-dynamic";
@@ -27,41 +28,6 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter: number } {
     }
     entry.count++;
     return { allowed: true, retryAfter: 0 };
-}
-
-// ===== SSRF PROTECTION =====
-// Block private, loopback, link-local and metadata service IP ranges
-const BLOCKED_HOSTNAMES = /^(localhost|.*\.local|.*\.internal|.*\.corp)$/i;
-const PRIVATE_IP_RE = /^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)/;
-
-function isSafeUrl(parsed: URL): { safe: boolean; reason: string } {
-    const { protocol, hostname } = parsed;
-
-    // Protocol whitelist
-    if (protocol !== "http:" && protocol !== "https:") {
-        return { safe: false, reason: `Protocol "${protocol}" is not allowed` };
-    }
-
-    // Block numeric private IPs
-    if (PRIVATE_IP_RE.test(hostname)) {
-        return { safe: false, reason: "Scanning private/internal IP addresses is not allowed" };
-    }
-
-    // Block dangerous hostnames
-    if (BLOCKED_HOSTNAMES.test(hostname)) {
-        return { safe: false, reason: "Scanning internal hostnames is not allowed" };
-    }
-
-    // Block bare IP literals that look like private ranges (extra guard)
-    const ipv4Parts = hostname.split(".").map(Number);
-    if (ipv4Parts.length === 4 && ipv4Parts.every(n => !isNaN(n))) {
-        const [a, b] = ipv4Parts;
-        if (a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) {
-            return { safe: false, reason: "Scanning private/internal IP addresses is not allowed" };
-        }
-    }
-
-    return { safe: true, reason: "" };
 }
 
 // ===== SCAN CONSTANTS =====

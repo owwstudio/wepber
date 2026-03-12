@@ -494,3 +494,11 @@ The following improvements were identified but deferred for future implementatio
 - **Requirement:** The downloaded PDF report must include a disclaimer text at the end of the document, matching the note from the disclaimer modal.
 - **Implementation:** Added `Disclaimer: Use scan results as a relative benchmark...` right above the footer line in `src/utils/downloadPDF.ts`.
 - **Rule:** The PDF export must clearly communicate that scores are relative benchmarks, setting the right expectations for the user when they share the generated report.
+
+## 31. SSRF Mitigation Rules
+- **Vulnerability Context:** API endpoints (`/api/scan`, `/api/compare`) accept user-provided URLs. If not correctly sanitized, the headless browser can fetch internal AWS metadata endpoints (`169.254.169.254`), loopbacks (`127.0.0.1`), or local resources on the hosting machine, which constitutes a Server-Side Request Forgery logic flaw.
+- **Resolution:** A unified, hardened `isSafeUrl` utility was constructed in `src/utils/security.ts` to reject IP-based bypasses encompassing:
+  - Octal, Hex, and zero-state (`0.0.0.0`) numeric IPs parsed successfully through the Node.js `URL` built-in object.
+  - IPv6 loopbacks like `[::1]`, Unique Local (`fc/fd`), and Link-Local (`fe80`).
+  - Mapped IPv4 addresses packaged in IPv6 notation (`::ffff:127.0.0.1`).
+- **Rule:** NEVER rely on simplistic Regex blocking alone for URLs without normalizing their payload. Always utilize `import { isSafeUrl } from "@/utils/security";` to gate incoming URLs before creating a Puppeteer page or initiating Fetch calls. This must be globally applied across any new feature that involves scanning a target link.

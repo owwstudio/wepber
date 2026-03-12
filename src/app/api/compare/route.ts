@@ -6,6 +6,7 @@ import { PNG } from "pngjs";
 import sharp from "sharp";
 import fs from "fs";
 import path from "path";
+import { isSafeUrl } from "@/utils/security";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -64,8 +65,15 @@ export async function POST(request: Request) {
         targetUrl = "https://" + targetUrl;
     }
 
-    // Validate URL format
-    try { new URL(targetUrl); } catch {
+    // Validate URL format and check for SSRF
+    try {
+        const parsed = new URL(targetUrl);
+        const safety = isSafeUrl(parsed);
+        if (!safety.safe) {
+            return NextResponse.json({ error: safety.reason }, { status: 400 });
+        }
+        targetUrl = parsed.href;
+    } catch {
         return NextResponse.json({ error: "Invalid URL format." }, { status: 400 });
     }
 
